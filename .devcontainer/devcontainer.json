@@ -1,6 +1,6 @@
 {
     "name": "Relaxation Neural Network",
-    "image": "ghcr.io/zyresearch/devcontianers/pytorch:latest",
+    "image": "ghcr.io/zyresearch/devcontainers/pytorch:latest",
     "mounts": [
         {
             "source": "relaxnn_data",
