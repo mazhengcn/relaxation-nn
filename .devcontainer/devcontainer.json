@@ -1,0 +1,25 @@
+{
+    "name": "Relaxation Neural Network",
+    "image": "ghcr.io/zyresearch/devcontianers/pytorch:latest",
+    "mounts": [
+        {
+            "source": "relaxnn_data",
+            "target": "${containerWorkspaceFolder}/data",
+            "type": "volume"
+        }
+    ],
+    "runArgs": [
+        "--gpus=all",
+        "--shm-size=1g"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    }
+}
