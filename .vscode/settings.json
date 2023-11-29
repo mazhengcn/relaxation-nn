@@ -3,6 +3,6 @@
         "editor.codeActionsOnSave": {
             "source.organizeImports": true
         },
-        "editor.defaultFormatter": "carliermarsh.ruff"
+        "editor.defaultFormatter": "charliermarsh.ruff"
     }
 }
