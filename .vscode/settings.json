@@ -6,6 +6,7 @@
         "editor.defaultFormatter": "charliermarsh.ruff"
     },
     "conventionalCommits.scopes": [
-        "relaxnn"
+        "relaxnn",
+        "readme"
     ]
 }
