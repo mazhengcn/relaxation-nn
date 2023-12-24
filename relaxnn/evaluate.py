@@ -2,18 +2,16 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import model.burgers as burgers
+import model.euler_v1 as euler_v1
+import model.euler_v2 as euler_v2
+import model.euler_v3 as euler_v3
+import model.swe_v1 as swe_v1
+import model.swe_v2 as swe_v2
 import numpy as np
 import torch
-from ml_collections import ConfigDict
-
-import burgers
-import euler_v1
-import euler_v2
-import euler_v3
-import swe_v1
-import swe_v2
-import swe_v3
 import utils
+from ml_collections import ConfigDict
 
 DEVICE = torch.device("cuda:0")
 
@@ -180,60 +178,6 @@ def evaluate(mode, path: Path):
                 ax2.plot(x, q_part[:, 1:2], label="true")
                 ax2.plot(
                     x, q_pred[:, 1:2], "--o", label="pred", markevery=10, markersize=3
-                )
-                plt.legend()
-                plt.savefig(
-                    slice_path / "epoch_{}_t_{}.png".format(j, t),
-                    dpi=500,
-                    bbox_inches="tight",
-                )
-                plt.close()
-
-                plt.figure()
-                plt.xlabel("x")
-                plt.ylabel("F")
-                plt.plot(x, flux, label="clawpack")
-                plt.plot(
-                    x, flux_pred, "--o", label="Relaxation", markevery=10, markersize=2
-                )
-                plt.legend()
-                plt.savefig(
-                    slice_path / "F_epoch_{}_t_{}.png".format(j, t),
-                    dpi=500,
-                    bbox_inches="tight",
-                )
-                plt.close()
-    elif mode == "swe_v3":
-        testdata = np.load(config["DataConfig"]["testdata_path"])
-        x_test, q_test = testdata[:, 0:2], testdata[:, 2:4]
-        x = x_test[0:1000, 1:2]
-        model = swe_v3.SweNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(300000, 300001):
-            model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
-            for i in range(11):
-                t = round(x_test[i * 1000, 0], 1)
-                x_part = x_test[i * 1000 : i * 1000 + 1000, :]
-                q_part = q_test[i * 1000 : i * 1000 + 1000, :]
-                flux = q_part[:, 1:2] * q_part[:, 0:1]
-                x_part = torch.tensor(x_part, dtype=torch.float32).to(DEVICE)
-                with torch.no_grad():
-                    q_pred = model(x_part)
-                    flux_pred = model.Flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
-                flux_pred = utils.to_numpy(flux_pred)
-                fig, (ax1, ax2) = plt.subplots(2, 1)
-                fig.suptitle("h and u of Clawpack")
-                ax1.set_ylabel("h")
-                ax1.plot(x, q_part[:, 0:1], label="true")
-                ax1.plot(
-                    x, q_pred[:, 0:1], "--o", label="pred", markevery=10, markersize=2
-                )
-                ax2.set_xlabel("x")
-                ax2.set_ylabel("u")
-                ax2.plot(x, q_part[:, 1:2], label="true")
-                ax2.plot(
-                    x, q_pred[:, 1:2], "--o", label="pred", markevery=10, markersize=2
                 )
                 plt.legend()
                 plt.savefig(
@@ -499,6 +443,6 @@ def evaluate(mode, path: Path):
 
 if __name__ == "__main__":
     evaluate(
-        mode="euler_v3",
-        path=Path("/root/Origin/OriginRela/_output/euler_v3/sod/2023-11-08T03-49-55"),
+        mode="burgers",
+        path=Path("./relaxnn/_output/burgers/riemann/2023-11-29T12-01-10"),
     )

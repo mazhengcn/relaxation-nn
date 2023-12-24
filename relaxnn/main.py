@@ -1,18 +1,16 @@
 from pathlib import Path
 
+import generator
+import model.burgers as burgers
+import model.euler_v1 as euler_v1
+import model.euler_v2 as euler_v2
+import model.euler_v3 as euler_v3
+import model.swe_v1 as swe_v1
+import model.swe_v2 as swe_v2
 import torch
+import train
 from absl import app, flags, logging
 from ml_collections import config_flags
-
-import burgers
-import euler_v1
-import euler_v2
-import euler_v3
-import generator
-import swe_v1
-import swe_v2
-import swe_v3
-import train
 
 _CONFIG = config_flags.DEFINE_config_file("config")
 
@@ -23,7 +21,6 @@ model_dict = {
     "burgers": burgers.BurgersNet,
     "swe_v1": swe_v1.SweNet,
     "swe_v2": swe_v2.SweNet,
-    "swe_v3": swe_v3.SweNet,
     "euler_v1": euler_v1.EulerNet,
     "euler_v2": euler_v2.EulerNet,
     "euler_v3": euler_v3.EulerNet,
@@ -74,43 +71,6 @@ def main(argv):
 
     if FLAGS.config.train_mode == "train":
         train.train(
-            device=DEVICE,
-            training_data=training_data,
-            x_test=x_test,
-            q_test=q_test,
-            model=model,
-            config=FLAGS.config.TrainConfig,
-            csv_path=csv_path,
-            model_dir=model_dir,
-            lr_dir=lr_dir,
-        )
-    elif FLAGS.config.train_mode == "alternate":
-        train.alternate(
-            device=DEVICE,
-            training_data=training_data,
-            x_test=x_test,
-            q_test=q_test,
-            model=model,
-            config=FLAGS.config.TrainConfig,
-            csv_path=csv_path,
-            model_dir=model_dir,
-            lr_dir=lr_dir,
-            step=FLAGS.config.step_ratio,
-        )
-    elif FLAGS.config.train_mode == "gradnorm":
-        train.gradnorm(
-            device=DEVICE,
-            training_data=training_data,
-            x_test=x_test,
-            q_test=q_test,
-            model=model,
-            config=FLAGS.config.TrainConfig,
-            csv_path=csv_path,
-            model_dir=model_dir,
-            lr_dir=lr_dir,
-        )
-    elif FLAGS.config.train_mode == "decouple":
-        train.decouple(
             device=DEVICE,
             training_data=training_data,
             x_test=x_test,

@@ -1,23 +1,17 @@
 """The version to study the height and velocity"""
 import torch
 from ml_collections import ConfigDict
+from model import basic
+from utils import grad
 
-import OriginRela.basic
-
-
-def gradients(outputs, inputs):
-    return torch.autograd.grad(
-        outputs, inputs, grad_outputs=torch.ones_like(outputs), create_graph=True
-    )
-
-
+gradients = grad.gradients
 class SweNet(torch.nn.Module):
     def __init__(self, config: ConfigDict):
         super().__init__()
-        self.u = OriginRela.basic.Net(
+        self.u = basic.Net(
             config.layer_sizes[0], config.activation[0], config.configuration[0]
         )
-        self.flux = OriginRela.basic.Net(
+        self.flux = basic.Net(
             config.layer_sizes[1], config.activation[1], config.configuration[1]
         )
         if config.loss == "MSE":

@@ -1,5 +1,8 @@
 # Project related files
 clawpack_data
+*output*
+*.ipynb
+figures
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
