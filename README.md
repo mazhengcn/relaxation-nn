@@ -1,7 +1,8 @@
 
-Relaxation Neural Networks(relaxnn)
+Relaxation Neural Networks(RelaxNN)
 =============
-Create reusable github readme templates.
+A deep learning framework for solving the nonlinear hyperbolic systems.
+![image](https://github.com/zhounan-sjtu/Relaxation-Neural-Networks/blob/main/schematic%20diagram.drawio)
 
 Table of Contents
 -----------------
