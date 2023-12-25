@@ -1,8 +1,8 @@
 
 Relaxation Neural Networks(RelaxNN)
 =============
-A deep learning framework for solving the nonlinear hyperbolic systems.
-![image](https://github.com/zhounan-sjtu/Relaxation-Neural-Networks/blob/main/schematic%20diagram.drawio)
+A deep learning framework for solving the nonlinear hyperbolic systems. \n
+[Title](vscode-local:/d%253A/research%2520file/relaxation.pdf)
 
 Table of Contents
 -----------------
