@@ -64,11 +64,6 @@ def main(argv):
     training_data = dataset.get_iter()
     x_test, q_test = dataset.load_testdata()
     model = model_dict[FLAGS.config.model](FLAGS.config.NetConfig).to(DEVICE)
-    # model_path = Path(
-    #     "/nfs/my/OriginRela/_output/euler_v3/blast/2023-10-18T02-21-34/model_state_dict/model_600000"
-    # )
-    # model.load_state_dict(torch.load(model_path))
-
     if FLAGS.config.train_mode == "train":
         train.train(
             device=DEVICE,

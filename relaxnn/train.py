@@ -60,7 +60,6 @@ def train(
         with torch.no_grad():
             q_pred = model(x_test)
         mae = torch.nn.L1Loss()(q_test, q_pred)
-        # L2RR : L2 relative error
         L2RE = torch.nn.MSELoss()(q_test, q_pred) / torch.nn.MSELoss()(
             q_test, torch.zeros_like(q_test)
         )

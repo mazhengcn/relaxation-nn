@@ -8,7 +8,6 @@ from ml_collections import ConfigDict
 class DataGenerator:
     def __init__(self, config: ConfigDict):
         assert config.range_L <= config.range_R
-        self.sampler = np.random.default_rng(seed=config.seed)
         self.range_L = config.range_L  # List[float]
         self.range_R = config.range_R  # List[float]
         self.num_samples = config.num_samples  # List[int]
@@ -52,4 +51,3 @@ class DataGenerator:
         data = np.load(self.load_path)
         x_test, q_test = data[:, 0 : self.dim], data[:, self.dim : data.shape[1]]
         return x_test, q_test
-
