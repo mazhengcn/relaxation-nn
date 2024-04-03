@@ -41,7 +41,7 @@ Then, to train our model, run the following command to pass the hyperparams and 
 
 Finally, to evaluate the model's performance, you can use `evaluate.py`.
 
-Our reference data are obtained by Clawpack: <https://www.clawpack.org/>, the information about the reference data are decribed in `data information.txt` in `data` folder.
+Our reference data are obtained by Clawpack: <https://www.clawpack.org/>, the information about the reference data are described in `data information.txt` in `data` folder.
 
 
 Authors
