@@ -1,0 +1,103 @@
+This txt records the information of the data set.
+
+
+"burgers_riemann.npy" ------    X : [-0.6, 0.6]
+                                T : [0.0, 1.0]
+                                xc = 0.0
+                                mx = 1000
+                                mt = 10
+                                ic_type = riemann with  u_l = 1.0,
+                                                        u_r = 0.0
+                                bc_type = extrap
+                                output = [t, x, velocity]
+-------------------------------------------------------------------------------------
+"burgers_sine.npy" ------       X : [-1.0, 1.0]
+                                T : [0.0, 1.0]
+                                xc = 0.0
+                                mx = 1000
+                                mt = 10
+                                ic_type = sine with u = -np.sin(np.pi * (x - xc))
+                                bc_type = extrap
+                                output = [t, x, velocity]
+-------------------------------------------------------------------------------------
+
+"swe_dam_break.npy" ------  X : [-1.5, 1.5]
+                            T : [0.0, 1.0]
+                            xc = 0.0
+                            mx = 1000
+                            mt = 10
+                            ic_type = dam_break with    h_l = 1.0, 
+                                                        h_r = 0.5,
+                                                        u = 0.0
+                            bc_type = extrap
+                            output = [t, x, height, velocity]
+-------------------------------------------------------------------------------------
+"swe_2shock.npy" ------     X : [-1.0, 1.0]
+                            T : [0.0, 1.0]
+                            xc = 0.0
+                            mx = 1000
+                            mt = 10
+                            ic_type = 2-shock with  h = 1.0,
+                                                    u_l = 1.0,
+                                                    u_r = -1.0
+                            bc_type = extrap
+                            output = [t, x, height, velocity]
+
+-------------------------------------------------------------------------------------
+"euler_shocktube.npy" ------  X : [-0.8, 0.8]
+                              T : [0.0, 0.4]
+                              mx = 1000
+                              mt = 10
+                              ic_type = shocktube  with   rho_l = 1.0
+                                                          rho_r = 1.0 / 8
+                                                          momentum = 0.0
+                                                          p_l = 1.0
+                                                          p_r = 0.1
+                              bc_type = extrap
+                              output = [t, x, rho, velocity, pressure]
+
+---------------------------------------------------------------------------
+"euler_laxtube.npy" ------  X : [-0.5, 0.5]
+                              T : [0.0, 0.16]
+                              mx = 1000
+                              mt = 10
+                              ic_type = laxtube  with   rho_l = 0.445
+                                                        rho_r = 0.5
+                                                        u_l = 0.698
+                                                        u_r = 0.0
+                                                        p_l = 3.528
+                                                        p_r = 0.571
+                              bc_type = extrap
+                              output = [t, x, rho, velocity, pressure]
+
+---------------------------------------------------------------------------
+"euler_shocksine.npy" ------  X : [-4.5, 2.7]
+                              T : [0.0, 1.8]
+                              xc = -4.0
+                              mx = 1000
+                              mt = 10
+                              ic_type = laxtube  with   rho_l = 3.857143
+                                                        rho_r = 1 + 0.2 * np.sin(5x)
+                                                        u_l = 2.629369
+                                                        u_r = 0.0
+                                                        p_l = 10.33333
+                                                        p_r = 1.0
+                              bc_type = extrap
+                              output = [t, x, rho, velocity, pressure]
+
+---------------------------------------------------------------------------
+"euler_simplified_blast.npy" ------ X : [-0.5, 0.5]
+                                    T : [0.0, 0.32]
+                                    xc1 = -0.1
+                                    xc2 = 0.1
+                                    mx = 1000
+                                    mt = 10
+                                    ic_type = laxtube  with     rho = 1.0
+                                                                u = 0.0
+                                                                p_l = 1.0
+                                                                p_m = 0.01
+                                                                p_r = 1.0
+                                    bc_type = extrap
+                                    output = [t, x, rho, velocity, pressure]
+
+---------------------------------------------------------------------------

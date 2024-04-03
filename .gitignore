@@ -1,5 +1,5 @@
 # Project related files
-clawpack_data
+# clawpack_data
 *output*
 *.ipynb
 figures
