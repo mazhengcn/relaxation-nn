@@ -43,6 +43,20 @@ Finally, to evaluate the model's performance, you can use `evaluate.py`.
 
 Our reference data are obtained by Clawpack: <https://www.clawpack.org/>, the information about the reference data are described in `data information.txt` in `data` folder.
 
+Citation
+-------
+
+```
+@misc{zhou2024capturing,
+      title={Capturing Shock Waves by Relaxation Neural Networks}, 
+      author={Nan Zhou and Zheng Ma},
+      year={2024},
+      eprint={2404.01163},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+```
+
 
 Authors
 -------
