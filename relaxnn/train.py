@@ -10,7 +10,7 @@ from ml_collections import ConfigDict
 
 def train(
     device: torch.device,
-    training_data: Iterable,
+    datagenerator,
     x_test: np.array,
     q_test: np.array,
     model: torch.nn.Module,
@@ -60,15 +60,16 @@ def train(
         with torch.no_grad():
             q_pred = model(x_test)
         mae = torch.nn.L1Loss()(q_test, q_pred)
-        L2RE = torch.nn.MSELoss()(q_test, q_pred) / torch.nn.MSELoss()(
-            q_test, torch.zeros_like(q_test)
+        # L2RR : L2 relative error
+        L2RE = torch.sqrt(
+            torch.nn.MSELoss()(q_test, q_pred)
+            / torch.nn.MSELoss()(q_test, torch.zeros_like(q_test))
         )
         # --------- train step------------#
-        data = next(training_data)
-        x_int, x_ic, x_bc = data["interior"], data["initial"], data["boundary"]
-        x_int = torch.tensor(x_int, requires_grad=True, dtype=torch.float32).to(device)
-        x_ic = torch.tensor(x_ic, requires_grad=True, dtype=torch.float32).to(device)
-        x_bc = torch.tensor(x_bc, requires_grad=True, dtype=torch.float32).to(device)
+        x_int, x_ic, x_bc = datagenerator.samples()
+        x_int.requires_grad = True
+        x_ic.requires_grad = True
+        x_bc.requires_grad = True
         res_loss, flux_loss = model.interior_loss(x_int, int_weights)
         u_ic_loss, F_ic_loss = model.init_loss(x_ic)
         u_bc_loss, F_bc_loss = model.bc_loss(x_bc)

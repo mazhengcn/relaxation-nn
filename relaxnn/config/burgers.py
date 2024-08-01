@@ -4,13 +4,11 @@ from ml_collections import ConfigDict, config_dict
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path="./data/clawpack_data/burgers_riemann.npy",
-        seed=config_dict.placeholder(int),
+        testdata_path="/root/relaxation-nn/data/clawpack_data/burgers_riemann.npy",
         distribution="uniform",
         range_L=[0.0, -0.6],
         range_R=[1.0, 0.6],
         num_samples=[2540, 320, 160],
-        sample=400000,
     )
     config.NetConfig = dict(
         layer_sizes=[

@@ -44,7 +44,7 @@ def main(argv):
     if not isinstance(root_dir, Path):
         root_dir = Path(root_dir)
     if not root_dir.exists():
-        root_dir.mkdir()
+        root_dir.mkdir(parents=True, exist_ok=True)
     time_dir = root_dir / FLAGS.config.timestamp
     if not time_dir.exists():
         time_dir.mkdir()
@@ -60,14 +60,18 @@ def main(argv):
 
     logging.get_absl_handler().use_absl_log_file("train", time_dir)
 
-    dataset = generator.DataGenerator(FLAGS.config.DataConfig)
-    training_data = dataset.get_iter()
-    x_test, q_test = dataset.load_testdata()
+    mygenerator = generator.Generator(FLAGS.config.DataConfig)
+    x_test, q_test = mygenerator.load_testdata()
     model = model_dict[FLAGS.config.model](FLAGS.config.NetConfig).to(DEVICE)
+    # model_path = Path(
+    #     "/nfs/my/OriginRela/_output/euler_v3/blast/2023-10-18T02-21-34/model_state_dict/model_600000"
+    # )
+    # model.load_state_dict(torch.load(model_path))
+
     if FLAGS.config.train_mode == "train":
         train.train(
             device=DEVICE,
-            training_data=training_data,
+            datagenerator=mygenerator,
             x_test=x_test,
             q_test=q_test,
             model=model,

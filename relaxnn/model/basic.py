@@ -3,6 +3,13 @@ import torch.nn as nn
 
 device = torch.device("cuda:0")
 
+class PDElossfn(torch.nn.MSELoss):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, inputs, targets):
+        return torch.square(inputs - targets).mean(dim=0).sum()
+
 class Net(nn.Module):
     def __init__(self, layer_sizes: list, activation: str, configuration: str) -> None:
         super().__init__()

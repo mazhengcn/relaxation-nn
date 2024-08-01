@@ -1,89 +1,78 @@
+import math
+
 import torch
 from ml_collections import ConfigDict
 from model import basic
-from utils import grad
+from torch.func import jacrev, vmap
 
-gradients = grad.gradients
 
 class SweNet(torch.nn.Module):
     def __init__(self, config: ConfigDict):
         super().__init__()
-        self.u = basic.Net(
+        self._h = basic.Net(
             config.layer_sizes[0], config.activation[0], config.configuration[0]
         )
-        self.flux = basic.Net(
+        self._u = basic.Net(
+            config.layer_sizes[0], config.activation[0], config.configuration[0]
+        )
+        self._flux_hu = basic.Net(
+            config.layer_sizes[1], config.activation[1], config.configuration[1]
+        )
+        self._flux_hu2p = basic.Net(
             config.layer_sizes[1], config.activation[1], config.configuration[1]
         )
         if config.loss == "MSE":
-            self.loss_fn = torch.nn.MSELoss()
-        self.num_eq = config.layer_sizes[0][-1] + config.layer_sizes[1][-1]
+            self.loss_fn = basic.PDElossfn()
         self.ibc_type = config.ibc_type
 
     def forward(self, x):
-        return self.u(x)
+        return torch.cat((self._h(x), self._u(x)), dim=1)
+
+    def q(self, t, x):
+        inputs = torch.hstack((t, x))
+        h = self._h(inputs)
+        u = self._u(inputs)
+        momentum = h * u
+        return torch.cat((h, momentum), dim=-1)
+
+    def f(self, t, x):
+        inputs = torch.hstack((t, x))
+        flux_hu = self._flux_hu(inputs)
+        flux_hu2p = self._flux_hu2p(inputs)
+        return torch.cat((flux_hu, flux_hu2p), dim=-1)
+
+    def flux(self, x):
+        return torch.cat((self._flux_hu(x), self._flux_hu2p(x)), dim=-1)
+
+    def flux_true(self, x):
+        h = self._h(x)
+        u = self._u(x)
+        momentum = h * u
+        hu2p = h * u**2 + 0.5 * h**2
+        return torch.cat((momentum, hu2p), dim=-1)
 
     def interior_loss(self, x, weights=[1.0, 1.0, 1.0, 1.0]):
-        if len(weights) != self.num_eq:
-            raise ValueError("length of weights should be equal to number of equations")
         x = x.to(torch.float32)
-        u = self.u(x)
-        flux = self.flux(x)
-        h = u[:, 0:1]
-        velocity = u[:, 1:2]
-        m = h * velocity
-        flux1 = flux[:, 0:1]
-        flux2 = flux[:, 1:2]
-        flux1_true = m
-        flux2_true = h * velocity**2 + 0.5 * h**2
-        dh_g = gradients(h, x)[0]
-        dm_g = gradients(m, x)[0]
-        dflux1_g = gradients(flux1, x)[0]
-        dflux2_g = gradients(flux2, x)[0]
-        h_t = dh_g[:, 0:1]
-        m_t = dm_g[:, 0:1]
-        flux1_x = dflux1_g[:, 1:2]
-        flux2_x = dflux2_g[:, 1:2]
-        zeros = torch.zeros_like(h_t)
-        L_eq1 = self.loss_fn(h_t + flux1_x, zeros)
-        L_eq2 = self.loss_fn(m_t + flux2_x, zeros)
-        L_flux1 = self.loss_fn(flux1, flux1_true)
-        L_flux2 = self.loss_fn(flux2, flux2_true)
-        return (
-            weights[0] * L_eq1 + weights[1] * L_eq2,
-            weights[2] * L_flux1 + weights[3] * L_flux2,
-        )
+        tt, xx = x.hsplit(2)
+        q_t = vmap(jacrev(self.q, argnums=0), in_dims=(0, 0))(tt, xx)
+        f_x = vmap(jacrev(self.f, argnums=1), in_dims=(0, 0))(tt, xx)
+        L_eq = self.loss_fn(q_t, -f_x)
+        L_flux = self.loss_fn(self.flux(x), self.flux_true(x))
+        return L_eq, L_flux
 
     def init_loss(self, x_ic, weights=[1.0, 1.0, 1.0, 1.0]):
         x_ic = x_ic.to(torch.float32)
-        u_ic_nn = self.u(x_ic)
-        u_ic_true = self.u_ic(x_ic)
-        F_ic_nn = self.flux(x_ic)
-        F_ic_true = self.F_ic(x_ic)
-        eq1 = self.loss_fn(u_ic_nn[:, 0:1], u_ic_true[:, 0:1])
-        eq2 = self.loss_fn(u_ic_nn[:, 1:2], u_ic_true[:, 1:2])
-        flux1 = self.loss_fn(F_ic_nn[:, 0:1], F_ic_true[:, 0:1])
-        flux2 = self.loss_fn(F_ic_nn[:, 1:2], F_ic_true[:, 1:2])
-        return (
-            weights[0] * eq1 + weights[1] * eq2,
-            weights[2] * flux1 + weights[3] * flux2,
-        )
+        L_eq = self.loss_fn(self.forward(x_ic), self.q_ic(x_ic))
+        L_flux = self.loss_fn(self.flux(x_ic), self.F_ic(x_ic))
+        return L_eq, L_flux
 
     def bc_loss(self, x_bc, weights=[1.0, 1.0, 1.0, 1.0]):
         x_bc = x_bc.to(torch.float32)
-        u_bc_nn = self.u(x_bc)
-        u_bc_true = self.u_bc(x_bc)
-        F_bc_nn = self.flux(x_bc)
-        F_bc_true = self.F_bc(x_bc)
-        eq1 = self.loss_fn(u_bc_nn[:, 0:1], u_bc_true[:, 0:1])
-        eq2 = self.loss_fn(u_bc_nn[:, 1:2], u_bc_true[:, 1:2])
-        flux1 = self.loss_fn(F_bc_nn[:, 0:1], F_bc_true[:, 0:1])
-        flux2 = self.loss_fn(F_bc_nn[:, 1:2], F_bc_true[:, 1:2])
-        return (
-            weights[0] * eq1 + weights[1] * eq2,
-            weights[2] * flux1 + weights[3] * flux2,
-        )
+        L_eq = self.loss_fn(self.forward(x_bc), self.q_bc(x_bc))
+        L_flux = self.loss_fn(self.flux(x_bc), self.F_bc(x_bc))
+        return L_eq, L_flux
 
-    def u_ic(self, x):
+    def q_ic(self, x):
         if self.ibc_type[0] == "dam-break":
             xc = torch.tensor(0.0)
             hl = torch.tensor(1.0)
@@ -103,7 +92,7 @@ class SweNet(torch.nn.Module):
         else:
             raise ValueError("other ibc type have not been implemented")
 
-    def u_bc(self, x):
+    def q_bc(self, x):
         if self.ibc_type[1] == "dam-break":
             xc = torch.tensor(0.0)
             hl = torch.tensor(1.0)
@@ -124,7 +113,7 @@ class SweNet(torch.nn.Module):
             raise ValueError("other ibc type have not been implemented")
 
     def F_ic(self, x):
-        q = self.u_ic(x)
+        q = self.q_ic(x)
         height = q[:, 0:1]
         velocity = q[:, 1:2]
         F_u = height * velocity
@@ -132,7 +121,7 @@ class SweNet(torch.nn.Module):
         return torch.cat((F_u, F_b), dim=1)
 
     def F_bc(self, x):
-        q = self.u_bc(x)
+        q = self.q_bc(x)
         height = q[:, 0:1]
         velocity = q[:, 1:2]
         F_u = height * velocity
