@@ -10,10 +10,20 @@ import model.swe_v1 as swe_v1
 import model.swe_v2 as swe_v2
 import numpy as np
 import torch
-import utils
 from ml_collections import ConfigDict
 
 DEVICE = torch.device("cuda:0")
+
+def to_numpy(inputs):
+    if isinstance(inputs, torch.Tensor):
+        return inputs.detach().cpu().numpy()
+    elif isinstance(inputs, np.ndarray):
+        return inputs
+    else:
+        raise TypeError(
+            "Unknown type of input, expected torch.Tensor or "
+            "np.ndarray, but got {}".format(type(input))
+        )
 
 
 def evaluate(mode, path: Path):
@@ -43,8 +53,8 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
-                flux_pred = utils.to_numpy(flux_pred)
+                q_pred = to_numpy(q_pred)
+                flux_pred = to_numpy(flux_pred)
                 plt.figure()
                 plt.suptitle("burgers equation at t={}".format(t))
                 plt.xlabel("x")
@@ -93,8 +103,8 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
-                flux_pred = utils.to_numpy(flux_pred)
+                q_pred = to_numpy(q_pred)
+                flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2) = plt.subplots(2, 1)
                 fig.suptitle("h and M of Clawpack")
                 ax1.set_ylabel("h")
@@ -164,8 +174,8 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
-                flux_pred = utils.to_numpy(flux_pred)
+                q_pred = to_numpy(q_pred)
+                flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2) = plt.subplots(2, 1)
                 fig.suptitle("h and u of Clawpack")
                 ax1.set_ylabel("h")
@@ -218,8 +228,8 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
-                flux_pred = utils.to_numpy(flux_pred)
+                q_pred = to_numpy(q_pred)
+                flux_pred = to_numpy(flux_pred)
                 rho = q_part[:, 0:1]
                 velocity = q_part[:, 1:2]
                 pressure = q_part[:, 2:3]
@@ -227,7 +237,7 @@ def evaluate(mode, path: Path):
                 flux1_true = rho * velocity
                 flux2_true = rho * velocity**2 + pressure
                 flux3_true = velocity * (energy + pressure)
-                flux_pred = utils.to_numpy(flux_pred)
+                flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
                 fig.suptitle("euler equation at t={}".format(t))
                 ax1.set_ylabel("rho")
@@ -310,14 +320,14 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
+                q_pred = to_numpy(q_pred)
                 rho = q_part[:, 0:1]
                 velocity = q_part[:, 1:2]
                 pressure = q_part[:, 2:3]
                 energy = pressure / 0.4 + 0.5 * rho * velocity**2
                 F1 = rho * velocity**2 + pressure
                 F2 = velocity * (energy + pressure)
-                flux_pred = utils.to_numpy(flux_pred)
+                flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
                 fig.suptitle("euler equation at t={}".format(t))
                 ax1.set_ylabel("rho")
@@ -390,13 +400,13 @@ def evaluate(mode, path: Path):
                 with torch.no_grad():
                     q_pred = model(x_part)
                     flux_pred = model.flux(x_part)
-                q_pred = utils.to_numpy(q_pred)
+                q_pred = to_numpy(q_pred)
                 rho = q_part[:, 0:1]
                 velocity = q_part[:, 1:2]
                 pressure = q_part[:, 2:3]
                 energy = pressure / 0.4 + 0.5 * rho * velocity**2
                 F = velocity * (energy + pressure)
-                flux_pred = utils.to_numpy(flux_pred)
+                flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
                 fig.suptitle("rho, velocity, pressure  of Clawpack")
                 ax1.set_ylabel("rho")
