@@ -11,8 +11,7 @@ import model.swe_v2 as swe_v2
 import numpy as np
 import torch
 from ml_collections import ConfigDict
-
-DEVICE = torch.device("cuda:0")
+from runtime import DEVICE
 
 def to_numpy(inputs):
     if isinstance(inputs, torch.Tensor):
@@ -22,7 +21,7 @@ def to_numpy(inputs):
     else:
         raise TypeError(
             "Unknown type of input, expected torch.Tensor or "
-            "np.ndarray, but got {}".format(type(input))
+            "np.ndarray, but got {}".format(type(inputs))
         )
 
 
@@ -43,7 +42,7 @@ def evaluate(mode, path: Path):
         model = burgers.BurgersNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(300000, 300001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * mx, 0], 1)
                 x_part = x_test[i * mx : i * mx + mx, :]
@@ -92,7 +91,7 @@ def evaluate(mode, path: Path):
         model = swe_v1.SweNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(600000, 600001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * mx, 0], 1)
                 x_part = x_test[i * mx : i * mx + mx, :]
@@ -164,7 +163,7 @@ def evaluate(mode, path: Path):
         model = swe_v2.SweNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(600000, 600001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * mx, 0], 1)
                 x_part = x_test[i * mx : i * mx + mx, :]
@@ -219,7 +218,7 @@ def evaluate(mode, path: Path):
         model = euler_v1.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(600000, 600001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * mx, 0], 3)
                 x_part = x_test[i * mx : i * mx + mx, :]
@@ -311,7 +310,7 @@ def evaluate(mode, path: Path):
         model = euler_v2.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(600000, 600001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * mx, 0], 3)
                 x_part = x_test[i * mx : i * mx + mx, :]
@@ -391,7 +390,7 @@ def evaluate(mode, path: Path):
         model = euler_v3.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
         for j in range(600000, 600001):
             model_path = model_dir / "model_{:02d}".format(j)
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
                 t = round(x_test[i * sizes, 0], 3)
                 x_part = x_test[i * sizes : i * sizes + sizes, :]

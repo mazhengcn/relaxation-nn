@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+from runtime import DEVICE
 
-device = torch.device("cuda:0")
+device = DEVICE
 
 class PDElossfn(torch.nn.MSELoss):
     def __init__(self):

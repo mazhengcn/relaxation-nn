@@ -1,10 +1,14 @@
+from pathlib import Path
+
 from ml_collections import ConfigDict, config_dict
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path="/root/relaxation-nn/data/clawpack_data/euler_shocktube.npy",
+        testdata_path=str(_REPO_ROOT / "data" / "clawpack_data" / "euler_shocktube.npy"),
         distribution="uniform",
         range_L=[0.0, -0.8],
         range_R=[0.4, 0.8],

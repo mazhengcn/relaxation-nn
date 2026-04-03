@@ -7,6 +7,7 @@ import cartesian
 import numpy as np
 import torch
 from ml_collections import ConfigDict
+from runtime import DEVICE
 from torch import nan
 from torch.distributions import constraints
 from torch.distributions.utils import broadcast_all
@@ -58,7 +59,7 @@ class BCsampler:
         self.tlow = low[0]
         self.thigh = high[0]
         self.tsampler = Uniform(self.tlow, self.thigh)
-        self.xrange = torch.tensor([[low[1]], [high[1]]]).to("cuda:0")
+        self.xrange = torch.tensor([[low[1]], [high[1]]]).to(DEVICE)
 
     def rsample(self, sample_shape=torch.Size()):
         s = sample_shape[0]
@@ -74,10 +75,10 @@ class Generator:
         self.intbatch = config.num_samples[0]
         self.icbatch = config.num_samples[1]
         self.bcbatch = config.num_samples[2]
-        self.intlow = torch.tensor(config.range_L).to("cuda:0")
-        self.inthigh = torch.tensor(config.range_R).to("cuda:0")
-        self.iclow = torch.tensor(config.range_L).to("cuda:0")
-        self.ichigh = torch.tensor([config.range_L[0], config.range_R[1]]).to("cuda:0")
+        self.intlow = torch.tensor(config.range_L).to(DEVICE)
+        self.inthigh = torch.tensor(config.range_R).to(DEVICE)
+        self.iclow = torch.tensor(config.range_L).to(DEVICE)
+        self.ichigh = torch.tensor([config.range_L[0], config.range_R[1]]).to(DEVICE)
         self.intsampler = Uniform(self.intlow, self.inthigh)
         self.icsampler = Uniform(self.iclow, self.ichigh)
         self.bcsampler = BCsampler(self.intlow, self.inthigh)

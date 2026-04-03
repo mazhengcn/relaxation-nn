@@ -11,11 +11,11 @@ import torch
 import train
 from absl import app, flags, logging
 from ml_collections import config_flags
+from runtime import DEVICE
 
 _CONFIG = config_flags.DEFINE_config_file("config")
 
 FLAGS = flags.FLAGS
-DEVICE = torch.device("cuda:0")
 
 model_dict = {
     "burgers": burgers.BurgersNet,

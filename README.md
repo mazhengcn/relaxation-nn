@@ -28,16 +28,33 @@ Install RelaxNN with the following commands:
 
 `git clone git@github.com:mazhengcn/relaxation-nn.git `
 
+We recommend using `uv` to manage the experiment environment:
+
+```bash
+git clone git@github.com:mazhengcn/relaxation-nn.git
+cd relaxation-nn
+uv python install 3.10.12
+uv sync
+```
+
+For the default training dependency set, install PyTorch 2.3.0 with:
+
+```bash
+uv sync --extra train
+```
+
+If your machine needs a specific CUDA build of PyTorch, keep the base `uv` workflow above and replace the default `torch==2.3.0` installation inside the environment with the wheel recommended by the official PyTorch selector.
+
 Quickstart
 -----
 
-First, down to the `relaxnn` folder:
+To train our model, run:
 
-`cd relaxnn`
+```bash
+uv run bash relaxnn/run_main.sh
+```
 
-Then, to train our model, run the following command to pass the hyperparams and execute the `main.py`:
-
-`bash run_main.sh`
+You can also launch `main.py` directly with `uv run` and pass the config flags manually.
 
 Finally, to evaluate the model's performance, you can use `evaluate.py`.
 
