@@ -2,7 +2,7 @@ import math
 
 import torch
 from ml_collections import ConfigDict
-from model import basic
+from relaxnn.model import basic
 from torch.func import jacrev, vmap
 
 

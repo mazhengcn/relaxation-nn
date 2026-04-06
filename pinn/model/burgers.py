@@ -1,0 +1,95 @@
+import math
+
+import torch
+from ml_collections import ConfigDict
+from shared.model import basic
+
+
+class BurgersNet(torch.nn.Module):
+    def __init__(self, config: ConfigDict):
+        super().__init__()
+        self._u = basic.Net(
+            config.layer_sizes,
+            config.activation,
+            config.configuration,
+            initialization=getattr(config, "initialization", "kaiming_uniform"),
+        )
+        if config.loss == "MSE":
+            self.loss_fn = basic.PDElossfn()
+        self.ibc_type = config.ibc_type
+
+    def forward(self, x):
+        return self._u(x)
+
+    def q(self, t, x):
+        inputs = torch.cat([t, x], dim=-1)
+        return self._u(inputs)
+
+    def f(self, t, x):
+        u = self.q(t, x)
+        return 0.5 * u**2
+
+    def flux(self, x):
+        u = self.forward(x)
+        return 0.5 * u**2
+
+    def interior_loss(self, x):
+        x = x.to(torch.float32)
+        u = self.forward(x)
+        grad_u = torch.autograd.grad(
+            outputs=u,
+            inputs=x,
+            grad_outputs=torch.ones_like(u),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        u_t = grad_u[:, 0:1]
+        u_x = grad_u[:, 1:2]
+        flux_x = u * u_x
+        L_eq = self.loss_fn(u_t, -flux_x)
+        L_flux = torch.zeros((), device=x.device, dtype=x.dtype)
+        return L_eq, L_flux
+
+    def init_loss(self, x_ic):
+        x_ic = x_ic.to(torch.float32)
+        L_eq = self.loss_fn(self.forward(x_ic), self.q_ic(x_ic))
+        L_flux = torch.zeros((), device=x_ic.device, dtype=x_ic.dtype)
+        return L_eq, L_flux
+
+    def bc_loss(self, x_bc):
+        x_bc = x_bc.to(torch.float32)
+        L_eq = self.loss_fn(self.forward(x_bc), self.q_bc(x_bc))
+        L_flux = torch.zeros((), device=x_bc.device, dtype=x_bc.dtype)
+        return L_eq, L_flux
+
+    def q_ic(self, x):
+        if self.ibc_type[0] == "riemann":
+            xc = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+            ul = torch.tensor(1.0, device=x.device, dtype=x.dtype)
+            ur = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+            return ul * (x[:, 1:2] <= xc) + ur * (x[:, 1:2] > xc)
+        if self.ibc_type[0] == "sine":
+            xc = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+            return -torch.sin(math.pi * (x[:, 1:2] - xc))
+        raise ValueError("Unsupported ic type {}".format(self.ibc_type[0]))
+
+    def q_bc(self, x):
+        if self.ibc_type[1] == "riemann":
+            xc = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+            ul = torch.tensor(1.0, device=x.device, dtype=x.dtype)
+            ur = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+            return ul * (x[:, 1:2] <= xc) + ur * (x[:, 1:2] > xc)
+        if self.ibc_type[1] == "sine":
+            return torch.zeros_like(x[:, 1:2])
+        raise ValueError("Unsupported bc type {}".format(self.ibc_type[1]))
+
+    def compute_loss_terms(self, x_int, x_ic, x_bc, int_weights=None):
+        del int_weights
+        res_loss, _ = self.interior_loss(x_int)
+        u_ic_loss, _ = self.init_loss(x_ic)
+        u_bc_loss, _ = self.bc_loss(x_bc)
+        return {
+            "res_loss": res_loss,
+            "u_ic": u_ic_loss,
+            "u_bc": u_bc_loss,
+        }

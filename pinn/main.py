@@ -7,8 +7,8 @@ if __package__ in (None, ""):
 import torch
 from absl import app, flags, logging
 from ml_collections import config_flags
-from relaxnn import generator, train
-from relaxnn.model import burgers, euler_v1, euler_v2, euler_v3, swe_v1, swe_v2
+from pinn.model import burgers
+from shared import generator, train
 from shared.runtime import DEVICE
 
 _CONFIG = config_flags.DEFINE_config_file("config")
@@ -17,11 +17,6 @@ FLAGS = flags.FLAGS
 
 model_dict = {
     "burgers": burgers.BurgersNet,
-    "swe_v1": swe_v1.SweNet,
-    "swe_v2": swe_v2.SweNet,
-    "euler_v1": euler_v1.EulerNet,
-    "euler_v2": euler_v2.EulerNet,
-    "euler_v3": euler_v3.EulerNet,
 }
 
 
@@ -49,32 +44,25 @@ def _prepare_run_dirs(root_dir, timestamp):
     model_dir.mkdir(exist_ok=True)
     lr_dir.mkdir(exist_ok=True)
     return time_dir, csv_path, model_dir, lr_dir
+
+
 def save_config(config, save_path):
     if not isinstance(save_path, Path):
         save_path = Path(save_path)
 
-    # Serialize config as json
     logging.info("Saving config.")
     config_path = save_path / "config.json"
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(config.to_json_best_effort(indent=2))
 
 
-def _prepare_config_for_run(config):
+def run_with_config(config):
+    torch.manual_seed(config.torch_seed)
     with config.DataConfig.unlocked():
-        if "sampling_strategy" not in config.DataConfig:
-            config.DataConfig.sampling_strategy = "monte_carlo"
-
         if config.DataConfig.sampling_strategy == "lhs":
-            if (
-                "lhs_criterion" not in config.DataConfig
-                or config.DataConfig.lhs_criterion is None
-            ):
+            if "lhs_criterion" not in config.DataConfig or config.DataConfig.lhs_criterion is None:
                 config.DataConfig.lhs_criterion = "center"
-            if (
-                "sampling_seed" not in config.DataConfig
-                or config.DataConfig.sampling_seed is None
-            ):
+            if "sampling_seed" not in config.DataConfig or config.DataConfig.sampling_seed is None:
                 config.DataConfig.sampling_seed = config.torch_seed
             if "interior_grid_shape" in config.DataConfig:
                 del config.DataConfig["interior_grid_shape"]
@@ -84,16 +72,8 @@ def _prepare_config_for_run(config):
             if "sampling_seed" in config.DataConfig:
                 del config.DataConfig["sampling_seed"]
 
-        if (
-            config.DataConfig.sampling_strategy != "fixed_grid"
-            and "interior_grid_shape" in config.DataConfig
-        ):
+        if config.DataConfig.sampling_strategy != "fixed_grid" and "interior_grid_shape" in config.DataConfig:
             del config.DataConfig["interior_grid_shape"]
-
-
-def run_with_config(config):
-    torch.manual_seed(config.torch_seed)
-    _prepare_config_for_run(config)
 
     time_dir, csv_path, model_dir, lr_dir = _prepare_run_dirs(
         config.root_dir, config.timestamp
@@ -101,15 +81,10 @@ def run_with_config(config):
 
     mygenerator = generator.Generator(config.DataConfig)
     save_config(config, time_dir)
-
     logging.get_absl_handler().use_absl_log_file("train", time_dir)
     mygenerator.export_reference_samples(time_dir / "reference_samples.npz")
     x_test, q_test = mygenerator.load_testdata()
     model = model_dict[config.model](config.NetConfig).to(DEVICE)
-    # model_path = Path(
-    #     "/nfs/my/OriginRela/_output/euler_v3/blast/2023-10-18T02-21-34/model_state_dict/model_600000"
-    # )
-    # model.load_state_dict(torch.load(model_path))
 
     if config.train_mode == "train":
         summary = train.train(

@@ -1,17 +1,26 @@
 import json
 from pathlib import Path
+import sys
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import matplotlib.pyplot as plt
-import model.burgers as burgers
-import model.euler_v1 as euler_v1
-import model.euler_v2 as euler_v2
-import model.euler_v3 as euler_v3
-import model.swe_v1 as swe_v1
-import model.swe_v2 as swe_v2
 import numpy as np
 import torch
 from ml_collections import ConfigDict
-from runtime import DEVICE
+from relaxnn.model import burgers, euler_v1, euler_v2, euler_v3, swe_v1, swe_v2
+from shared.runtime import DEVICE
+
+MODEL_DICT = {
+    "burgers": burgers.BurgersNet,
+    "swe_v1": swe_v1.SweNet,
+    "swe_v2": swe_v2.SweNet,
+    "euler_v1": euler_v1.EulerNet,
+    "euler_v2": euler_v2.EulerNet,
+    "euler_v3": euler_v3.EulerNet,
+}
+
 
 def to_numpy(inputs):
     if isinstance(inputs, torch.Tensor):
@@ -25,22 +34,36 @@ def to_numpy(inputs):
         )
 
 
+def resolve_checkpoint_epochs(model_dir: Path):
+    epochs = []
+    for model_path in model_dir.glob("model_*"):
+        try:
+            epochs.append(int(model_path.name.split("_")[-1]))
+        except ValueError:
+            continue
+    if not epochs:
+        raise FileNotFoundError("No checkpoint found under {}".format(model_dir))
+    return [max(epochs)]
+
+
 def evaluate(mode, path: Path):
     root_dir = path
     json_path = root_dir / "config.json"
     slice_path = root_dir / "slice_pool"
     model_dir = root_dir / "model_state_dict"
+    checkpoint_epochs = resolve_checkpoint_epochs(model_dir)
     if not slice_path.exists():
         slice_path.mkdir()
     with open(json_path, "r", encoding="utf8") as jp:
         config = json.load(jp)
+    plot_label = config.get("plot_label", "RelaxNN")
     if mode == "burgers":
         mx = 1000
         testdata = np.load(config["DataConfig"]["testdata_path"])
         x_test, q_test = testdata[:, 0:2], testdata[:, 2:3]
         x = x_test[0:mx, 1:2]
-        model = burgers.BurgersNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(300000, 300001):
+        model = MODEL_DICT["burgers"](ConfigDict(config["NetConfig"])).to(DEVICE)
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
@@ -59,9 +82,7 @@ def evaluate(mode, path: Path):
                 plt.xlabel("x")
                 plt.ylabel("u")
                 plt.plot(x, q_part, label="clawpack")
-                plt.plot(
-                    x, q_pred, "--o", label="Relaxation", markevery=10, markersize=3
-                )
+                plt.plot(x, q_pred, "--o", label=plot_label, markevery=10, markersize=3)
                 plt.legend()
                 plt.savefig(
                     slice_path / "epoch_{}_t_{}.png".format(j, t),
@@ -74,7 +95,7 @@ def evaluate(mode, path: Path):
                 plt.ylabel("F")
                 plt.plot(x, flux, label="clawpack")
                 plt.plot(
-                    x, flux_pred, "--o", label="Relaxation", markevery=10, markersize=3
+                    x, flux_pred, "--o", label=plot_label, markevery=10, markersize=3
                 )
                 plt.legend()
                 plt.savefig(
@@ -89,7 +110,7 @@ def evaluate(mode, path: Path):
         mx = 1000
         x = x_test[0:mx, 1:2]
         model = swe_v1.SweNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(600000, 600001):
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
@@ -161,7 +182,7 @@ def evaluate(mode, path: Path):
         mx = 1000
         x = x_test[0:mx, 1:2]
         model = swe_v2.SweNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(600000, 600001):
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
@@ -216,7 +237,7 @@ def evaluate(mode, path: Path):
         mx = 1000
         x = x_test[0:mx, 1:2]
         model = euler_v1.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(600000, 600001):
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
@@ -308,7 +329,7 @@ def evaluate(mode, path: Path):
         mx = 1000
         x = x_test[0:mx, 1:2]
         model = euler_v2.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(600000, 600001):
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):
@@ -388,7 +409,7 @@ def evaluate(mode, path: Path):
         x_test, q_test = testdata[:, 0:2], testdata[:, 2:5]
         x = x_test[0:sizes, 1:2]
         model = euler_v3.EulerNet(ConfigDict(config["NetConfig"])).to(DEVICE)
-        for j in range(600000, 600001):
+        for j in checkpoint_epochs:
             model_path = model_dir / "model_{:02d}".format(j)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE))
             for i in range(11):

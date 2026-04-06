@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.8,<4",
     "ml-collections>=0.1.1,<1",
     "numpy==1.24.4",
+    "smt>=2.13.0",
 ]
 
 [project.optional-dependencies]
