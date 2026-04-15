@@ -1,4 +1,4 @@
-import dataclasses
+import json
 
 import jax
 import jax.numpy as jnp
@@ -102,13 +102,14 @@ def train_and_evaluate(config, workdir: str | epath.Path):
         # Build Model and Optimizer
         # ---------------------------------------------------------------------------
         model, optimizer, start_step = init_or_restore(
-            ckptr, config.restore_checkpoints, config, init_key
+            ckptr, config.restore_checkpoint, config, init_key
         )
         writer = metric_writers.create_default_writer(
             workdir, just_logging=jax.process_index() > 0
         )
         if start_step == 0:
-            writer.write_hparams(dataclasses.asdict(config))
+            writer.write_hparams(config.to_dict())
+            (workdir / "config.json").write_text(json.dumps(config.to_dict(), indent=2))
 
         # Main Train Loop
         # ---------------------------------------------------------------------------
@@ -185,10 +186,11 @@ def train_and_evaluate(config, workdir: str | epath.Path):
                     logging.info("Saving checkpoint step %d.", step)
                     with report_progress.timed("checkpoint"):
                         ckptr.save_pytree_async(
+                            step,
                             nnx.state(
                                 {
                                     "params": model,
                                     "optimizer": optimizer,
                                 }
-                            )
+                            ),
                         )

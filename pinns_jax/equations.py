@@ -16,7 +16,7 @@ class Solution(nnx.Module):
             assert x.shape[:-1] == t.shape[:-1], "x and t must have the same batch size"
         inputs = jnp.concat([jnp.atleast_1d(x), jnp.atleast_1d(t)], axis=-1)
         outputs = self.mlp(inputs)
-        return outputs.squeeze(-1)
+        return jnp.squeeze(outputs, axis=-1)  # Output shape: (batch_size,)
 
 
 class BaseEquation(ABC):
@@ -55,6 +55,8 @@ class Burgers1D(BaseEquation):
             self.loss_fn = lambda x: jnp.mean(x**2)
 
     def residual(self, u: Solution, x: jax.Array, t: jax.Array):
+        x = jnp.squeeze(x)
+        t = jnp.squeeze(t)
         u_x_fn = jax.grad(u, argnums=0)
         u_t_fn = jax.grad(u, argnums=1)
         u_x = u_x_fn(x, t)

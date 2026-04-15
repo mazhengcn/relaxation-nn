@@ -6,9 +6,9 @@ import jax.numpy as jnp
 from flax import nnx
 from orbax.checkpoint import v1 as ocp
 
-from .equations import Solution
+from .equations import Burgers1D, Solution
 from .net import MLPConfig
-from .train import init_or_restore, init_training_states
+from .train import eval_step, init_or_restore, init_training_states, train_step
 
 
 @dataclasses.dataclass
@@ -92,7 +92,9 @@ class TestInitOrRestore:
         mock_ckptr = MagicMock()
         mock_ckptr.latest = None
 
-        model, optimizer, last_step = init_or_restore(mock_ckptr, None, config)
+        model, optimizer, last_step = init_or_restore(
+            mock_ckptr, None, config, init_key=0
+        )
 
         assert last_step == 0
         assert isinstance(model, Solution)
@@ -103,7 +105,7 @@ class TestInitOrRestore:
         mock_ckptr = MagicMock()
         mock_ckptr.latest = None
 
-        model, _, _ = init_or_restore(mock_ckptr, None, config)
+        model, _, _ = init_or_restore(mock_ckptr, None, config, init_key=0)
         out = model(jnp.array(0.5), jnp.array(0.1))
         assert jnp.isfinite(out)
 
@@ -112,7 +114,9 @@ class TestInitOrRestore:
         original_model = _save_checkpoint(tmp_path, config)
 
         with ocp.training.Checkpointer(tmp_path) as ckptr:
-            model, optimizer, last_step = init_or_restore(ckptr, None, config)
+            model, optimizer, last_step = init_or_restore(
+                ckptr, None, config, init_key=0
+            )
 
         assert isinstance(model, Solution)
         assert isinstance(optimizer, nnx.Optimizer)
@@ -131,7 +135,7 @@ class TestInitOrRestore:
             ckptr.save_pytree(0, state, force=True)
 
         with ocp.training.Checkpointer(tmp_path) as ckptr:
-            _, _, last_step = init_or_restore(ckptr, None, config)
+            _, _, last_step = init_or_restore(ckptr, None, config, init_key=0)
 
         assert last_step == 7
 
@@ -148,10 +152,196 @@ class TestInitOrRestore:
         fresh_dir = tmp_path / "fresh"
         fresh_dir.mkdir()
         with ocp.training.Checkpointer(fresh_dir) as ckptr:
-            model, optimizer, _ = init_or_restore(ckptr, ckpt_path, config)
+            model, optimizer, _ = init_or_restore(ckptr, ckpt_path, config, init_key=0)
 
         assert isinstance(model, Solution)
         assert all(
             jnp.array_equal(a, b)
             for a, b in zip(_param_leaves(original_model), _param_leaves(model))
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for train_step / eval_step tests
+# ---------------------------------------------------------------------------
+
+N = 8  # small batch size for tests
+
+
+def _make_batch():
+    """Create a minimal batch matching the Burgers1D loss signature.
+
+    The residual uses jax.grad so x and t must be scalars when vmapped;
+    pass 1-D arrays of shape (N,) so each vmapped element is a scalar.
+    """
+    x = jnp.linspace(-1.0, 1.0, N)
+    t = jnp.linspace(0.0, 1.0, N)
+    return {
+        "interior": (x, t),
+        "initial": (x, jnp.zeros(N)),
+        "boundary": (jnp.full(N, -1.0), t),
+    }
+
+
+def _make_train_metrics():
+    return nnx.MultiMetric(
+        total_loss=nnx.metrics.Average("total_loss"),
+        res_loss=nnx.metrics.Average("res_loss"),
+        bc_loss=nnx.metrics.Average("bc_loss"),
+        ic_loss=nnx.metrics.Average("ic_loss"),
+    )
+
+
+def _make_eval_metrics():
+    return nnx.MultiMetric(
+        mse=nnx.metrics.Average("mse"),
+        relative_mse=nnx.metrics.Average("relative_mse"),
+    )
+
+
+class TestTrainStep:
+    def test_metrics_are_updated(self):
+        config = make_config()
+        model, optimizer = init_training_states(config, jax.random.key(0))
+        metrics = _make_train_metrics()
+        equation = Burgers1D()
+        batch = _make_batch()
+
+        train_step(
+            model=model,
+            optimizer=optimizer,
+            metrics=metrics,
+            equation=equation,
+            batch=batch,
+        )
+        result = metrics.compute()
+
+        assert set(result.keys()) == {"total_loss", "res_loss", "bc_loss", "ic_loss"}
+        assert all(jnp.isfinite(v) for v in result.values())
+
+    def test_losses_are_non_negative(self):
+        config = make_config()
+        model, optimizer = init_training_states(config, jax.random.key(0))
+        metrics = _make_train_metrics()
+        equation = Burgers1D()
+        batch = _make_batch()
+
+        train_step(
+            model=model,
+            optimizer=optimizer,
+            metrics=metrics,
+            equation=equation,
+            batch=batch,
+        )
+        result = metrics.compute()
+
+        assert all(v >= 0 for v in result.values())
+
+    def test_params_change_after_step(self):
+        config = make_config()
+        model, optimizer = init_training_states(config, jax.random.key(0))
+        params_before = jax.tree.leaves(nnx.to_pure_dict(nnx.state(model, nnx.Param)))
+        metrics = _make_train_metrics()
+        equation = Burgers1D()
+        batch = _make_batch()
+
+        train_step(
+            model=model,
+            optimizer=optimizer,
+            metrics=metrics,
+            equation=equation,
+            batch=batch,
+        )
+        params_after = jax.tree.leaves(nnx.to_pure_dict(nnx.state(model, nnx.Param)))
+
+        assert any(
+            not jnp.array_equal(a, b) for a, b in zip(params_before, params_after)
+        )
+
+    def test_multiple_steps_accumulate_metrics(self):
+        config = make_config()
+        model, optimizer = init_training_states(config, jax.random.key(0))
+        metrics = _make_train_metrics()
+        equation = Burgers1D()
+        batch = _make_batch()
+
+        train_step(
+            model=model,
+            optimizer=optimizer,
+            metrics=metrics,
+            equation=equation,
+            batch=batch,
+        )
+        train_step(
+            model=model,
+            optimizer=optimizer,
+            metrics=metrics,
+            equation=equation,
+            batch=batch,
+        )
+        result = metrics.compute()
+
+        # After two steps, averages should still be finite scalars
+        assert all(jnp.isfinite(v) for v in result.values())
+
+
+class TestEvalStep:
+    def test_metrics_are_updated(self):
+        config = make_config()
+        model, _ = init_training_states(config, jax.random.key(0))
+        metrics = _make_eval_metrics()
+        x = jnp.linspace(-1.0, 1.0, N).reshape(N, 1)
+        t = jnp.linspace(0.0, 1.0, N).reshape(N, 1)
+        labels = model(x, t)
+        data = {"inputs": (x, t), "labels": labels}
+
+        eval_step(model, metrics, data)
+        result = metrics.compute()
+
+        assert set(result.keys()) == {"mse", "relative_mse"}
+        assert all(jnp.isfinite(v) for v in result.values())
+
+    def test_perfect_prediction_gives_zero_mse(self):
+        config = make_config()
+        model, _ = init_training_states(config, jax.random.key(0))
+        metrics = _make_eval_metrics()
+        x = jnp.linspace(-1.0, 1.0, N).reshape(N, 1)
+        t = jnp.linspace(0.0, 1.0, N).reshape(N, 1)
+        # Labels equal model output → MSE should be 0
+        labels = model(x, t)
+        data = {"inputs": (x, t), "labels": labels}
+
+        eval_step(model, metrics, data)
+        result = metrics.compute()
+
+        assert jnp.allclose(result["mse"], 0.0, atol=1e-6)
+
+    def test_mse_is_non_negative(self):
+        config = make_config()
+        model, _ = init_training_states(config, jax.random.key(0))
+        metrics = _make_eval_metrics()
+        x = jnp.linspace(-1.0, 1.0, N).reshape(N, 1)
+        t = jnp.linspace(0.0, 1.0, N).reshape(N, 1)
+        labels = jnp.ones(N)
+        data = {"inputs": (x, t), "labels": labels}
+
+        eval_step(model, metrics, data)
+        result = metrics.compute()
+
+        assert result["mse"] >= 0.0
+        assert result["relative_mse"] >= 0.0
+
+    def test_multiple_eval_steps_accumulate(self):
+        config = make_config()
+        model, _ = init_training_states(config, jax.random.key(0))
+        metrics = _make_eval_metrics()
+        x = jnp.linspace(-1.0, 1.0, N).reshape(N, 1)
+        t = jnp.linspace(0.0, 1.0, N).reshape(N, 1)
+        labels = jnp.ones(N)
+        data = {"inputs": (x, t), "labels": labels}
+
+        eval_step(model, metrics, data)
+        eval_step(model, metrics, data)
+        result = metrics.compute()
+
+        assert all(jnp.isfinite(v) for v in result.values())
