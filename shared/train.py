@@ -1,4 +1,5 @@
 import csv
+import inspect
 import time
 from pathlib import Path
 
@@ -338,7 +339,11 @@ def _compute_loss_terms(
             int_weights=int_weights,
         )
     else:
-        res_loss, flux_loss = model.interior_loss(x_int, int_weights)
+        res_loss, flux_loss = _call_interior_loss(
+            model=model,
+            x_int=x_int,
+            int_weights=int_weights,
+        )
         u_ic_loss, F_ic_loss = model.init_loss(x_ic)
         u_bc_loss, F_bc_loss = model.bc_loss(x_bc)
         loss_terms = {
@@ -419,6 +424,28 @@ def _record_state(
     summary["final_loss_terms"] = {
         name: _to_float(loss_terms[name]) for name in history_terms
     }
+
+
+def _call_interior_loss(
+    model: torch.nn.Module,
+    x_int: torch.Tensor,
+    int_weights: torch.Tensor | None,
+):
+    signature = inspect.signature(model.interior_loss)
+    positional_params = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+
+    supports_weights = len(positional_params) >= 2
+    if supports_weights and int_weights is not None:
+        return model.interior_loss(x_int, int_weights)
+    return model.interior_loss(x_int)
 
 
 def _evaluate_test_metrics(

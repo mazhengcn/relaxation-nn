@@ -25,6 +25,36 @@ model_dict = {
 }
 
 
+def _format_elapsed_seconds(seconds):
+    total_seconds = max(0, int(round(float(seconds))))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return "{:02d}:{:02d}:{:02d}".format(hours, minutes, secs)
+
+
+def _log_training_summary(time_dir: Path, summary: dict):
+    if not summary:
+        return
+
+    elapsed_seconds = float(summary.get("elapsed_seconds", 0.0))
+    logging.info(
+        "Training summary | status : {} | final_epoch : {} | final_total_loss : {} | "
+        "best_MAE : {} @ {} | best_L2RE : {} @ {} | elapsed_seconds : {:.2f} | "
+        "elapsed_hms : {} | output_dir : {}".format(
+            summary.get("status"),
+            summary.get("final_epoch"),
+            summary.get("final_total_loss"),
+            summary.get("best_mae"),
+            summary.get("best_mae_epoch"),
+            summary.get("best_l2re"),
+            summary.get("best_l2re_epoch"),
+            elapsed_seconds,
+            _format_elapsed_seconds(elapsed_seconds),
+            time_dir,
+        )
+    )
+
+
 def _prepare_run_dirs(root_dir, timestamp):
     if not isinstance(root_dir, Path):
         root_dir = Path(root_dir)
@@ -49,6 +79,24 @@ def _prepare_run_dirs(root_dir, timestamp):
     model_dir.mkdir(exist_ok=True)
     lr_dir.mkdir(exist_ok=True)
     return time_dir, csv_path, model_dir, lr_dir
+
+
+def _resolve_root_dir(config):
+    if "root_dir" in config and config.root_dir:
+        return Path(config.root_dir)
+
+    if "output_root" in config and config.output_root:
+        root_dir = Path(config.output_root)
+        if "experiment_name" in config and config.experiment_name:
+            root_dir = root_dir / config.experiment_name
+        return root_dir
+
+    raise ValueError(
+        "Config must set `root_dir` or set `output_root` "
+        "and optionally `experiment_name`."
+    )
+
+
 def save_config(config, save_path):
     if not isinstance(save_path, Path):
         save_path = Path(save_path)
@@ -94,9 +142,12 @@ def _prepare_config_for_run(config):
 def run_with_config(config):
     torch.manual_seed(config.torch_seed)
     _prepare_config_for_run(config)
+    root_dir = _resolve_root_dir(config)
+    with config.unlocked():
+        config.root_dir = str(root_dir)
 
     time_dir, csv_path, model_dir, lr_dir = _prepare_run_dirs(
-        config.root_dir, config.timestamp
+        root_dir, config.timestamp
     )
 
     mygenerator = generator.Generator(config.DataConfig)
@@ -123,6 +174,7 @@ def run_with_config(config):
             model_dir=model_dir,
             lr_dir=lr_dir,
         )
+        _log_training_summary(time_dir, summary)
         return time_dir, summary
     else:
         raise ValueError("other mode have not been implemented")

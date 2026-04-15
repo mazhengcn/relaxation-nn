@@ -9,15 +9,33 @@ from torch.func import jacrev, vmap
 class BurgersNet(torch.nn.Module):
     def __init__(self, config: ConfigDict):
         super().__init__()
+        initializations = self._resolve_initializations(config)
         self._u = basic.Net(
-            config.layer_sizes[0], config.activation[0], config.configuration[0]
+            config.layer_sizes[0],
+            config.activation[0],
+            config.configuration[0],
+            initialization=initializations[0],
         )
         self._flux_u2 = basic.Net(
-            config.layer_sizes[1], config.activation[1], config.configuration[1]
+            config.layer_sizes[1],
+            config.activation[1],
+            config.configuration[1],
+            initialization=initializations[1],
         )
         if config.loss == "MSE":
             self.loss_fn = basic.PDElossfn()
         self.ibc_type = config.ibc_type
+
+    @staticmethod
+    def _resolve_initializations(config: ConfigDict):
+        initialization = getattr(config, "initialization", "kaiming_uniform")
+        if isinstance(initialization, str):
+            return [initialization, initialization]
+        if len(initialization) != 2:
+            raise ValueError(
+                "NetConfig.initialization must be a string or a sequence of length 2"
+            )
+        return list(initialization)
 
     def forward(self, x):
         return self._u(x)

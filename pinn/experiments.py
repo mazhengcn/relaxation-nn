@@ -2,13 +2,13 @@ import argparse
 import copy
 import csv
 import gc
+import importlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import torch
 
-from pinn.config.burgers_sine_experiments import get_config
 from pinn.main import run_with_config
 
 
@@ -32,7 +32,7 @@ class SeedVariant:
 
 
 OPTIMIZER_VARIANTS = [
-    Variant("adam", "Adam with exponential decay"),
+    Variant("adam", "Adam with configured scheduler"),
     Variant("lbfgs", "Pure L-BFGS"),
     Variant("adam_lbfgs", "Adam warm-up followed by L-BFGS"),
 ]
@@ -71,6 +71,11 @@ def parse_args():
     )
     parser.add_argument("--root_dir", default="", help="Optional output root.")
     parser.add_argument(
+        "--config_module",
+        default="pinn.config.burgers_sine_experiments",
+        help="Python module that defines get_config().",
+    )
+    parser.add_argument(
         "--variants",
         default="",
         help="Optional comma-separated subset of variants for the selected stage.",
@@ -78,6 +83,12 @@ def parse_args():
     parser.add_argument("--torch_seed", type=int, default=1)
     parser.add_argument("--epochs", type=int, default=30000)
     parser.add_argument("--adam_epochs", type=int, default=20000)
+    parser.add_argument(
+        "--lbfgs_lr",
+        type=float,
+        default=None,
+        help="Optional override for pure/adam_lbfgs L-BFGS learning rate.",
+    )
     parser.add_argument(
         "--base_optimizer",
         choices=[variant.name for variant in OPTIMIZER_VARIANTS],
@@ -108,6 +119,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    get_config = _load_get_config(args.config_module)
     root_dir = _resolve_root_dir(args.stage, args.root_dir)
     root_dir.mkdir(parents=True, exist_ok=True)
 
@@ -118,6 +130,8 @@ def main():
         config.timestamp = variant.name
         config.torch_seed = args.torch_seed
         config.TrainConfig.epochs = args.epochs
+        if args.lbfgs_lr is not None:
+            config.TrainConfig.lbfgs_lr = args.lbfgs_lr
 
         if args.stage == "optimizer":
             _apply_optimizer_variant(config, variant.name)
@@ -159,6 +173,13 @@ def main():
         result = _run_variant(config, variant, args.stage)
         rows.append(result)
         _write_stage_summary(root_dir / "results.csv", rows)
+
+
+def _load_get_config(module_name: str):
+    module = importlib.import_module(module_name)
+    if not hasattr(module, "get_config"):
+        raise AttributeError("Module {} does not define get_config()".format(module_name))
+    return module.get_config
 
 
 def _apply_sampling_seed_default(config):
@@ -210,24 +231,45 @@ def _selected_seed_variants(variants_arg: str):
 
 
 def _apply_optimizer_variant(config, variant_name: str):
+    train_config = config.TrainConfig
+
     if variant_name == "adam":
-        config.TrainConfig.optimizer = "Adam"
-        config.TrainConfig.lr = 1e-3
-        config.TrainConfig.decay = "Exponential"
-        config.TrainConfig.decay_rate = 0.99
+        train_config.optimizer = "Adam"
+        if "lr" not in train_config:
+            train_config.lr = 1e-3
+        if "decay" not in train_config:
+            train_config.decay = "Exponential"
+        if "scheduler_every" not in train_config:
+            train_config.scheduler_every = 1000
+        if (
+            str(train_config.decay).strip().lower() == "exponential"
+            and "decay_rate" not in train_config
+        ):
+            train_config.decay_rate = 0.99
         return
 
     if variant_name == "lbfgs":
-        config.TrainConfig.optimizer = "LBFGS"
-        config.TrainConfig.lr = 1.0
+        train_config.optimizer = "LBFGS"
+        train_config.lr = getattr(train_config, "lbfgs_lr", 1.0)
         return
 
     if variant_name == "adam_lbfgs":
-        config.TrainConfig.optimizer = "Adam_LBFGS"
-        config.TrainConfig.adam_lr = 1e-3
-        config.TrainConfig.adam_decay = "Exponential"
-        config.TrainConfig.adam_decay_rate = 0.99
-        config.TrainConfig.lbfgs_lr = 1.0
+        train_config.optimizer = "Adam_LBFGS"
+        if "adam_lr" not in train_config:
+            train_config.adam_lr = getattr(train_config, "lr", 1e-3)
+        if "adam_decay" not in train_config:
+            train_config.adam_decay = getattr(train_config, "decay", "Exponential")
+        if "adam_scheduler_every" not in train_config:
+            train_config.adam_scheduler_every = getattr(
+                train_config, "scheduler_every", 1000
+            )
+        if (
+            str(train_config.adam_decay).strip().lower() == "exponential"
+            and "adam_decay_rate" not in train_config
+        ):
+            train_config.adam_decay_rate = getattr(train_config, "decay_rate", 0.99)
+        if "lbfgs_lr" not in train_config:
+            train_config.lbfgs_lr = 1.0
         return
 
     raise ValueError("Unknown optimizer variant {}".format(variant_name))

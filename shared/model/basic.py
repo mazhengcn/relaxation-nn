@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn as nn
+
 from shared.runtime import DEVICE
 
 device = DEVICE
@@ -51,7 +52,8 @@ class Net(nn.Module):
         return y
 
     def _initialize_layers(self, initialization: str):
-        gain = nn.init.calculate_gain(self._activation_name)
+        # gain = nn.init.calculate_gain(self._activation_name)
+        gain = 1.0
         for layer in self.layers:
             if initialization == "kaiming_uniform":
                 if self._activation_name == "relu":

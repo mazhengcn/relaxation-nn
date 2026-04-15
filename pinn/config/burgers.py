@@ -12,30 +12,30 @@ def get_config() -> ConfigDict:
             _REPO_ROOT / "data" / "clawpack_data" / "burgers_riemann.npy"
         ),
         sampling_strategy="monte_carlo",
+        lhs_criterion="center",
+        sampling_seed=None,
+        eval_time_window=[],
         range_L=[0.0, -0.6],
         range_R=[1.0, 0.6],
         num_samples=[10000, 1000, 1000],
+        interior_grid_shape=[10, 250],
     )
     config.NetConfig = dict(
-        layer_sizes=[
-            [2, 64, 64, 64, 64, 1],
-            [2, 64, 64, 64, 64, 1],
-        ],
-        configuration=["DNN", "DNN"],
-        activation=["tanh", "tanh"],
-        initialization="xavier_uniform",
+        layer_sizes=[2, 64, 64, 64, 64, 1],
+        configuration="DNN",
+        activation="tanh",
         ibc_type=["riemann", "riemann"],
         loss="MSE",
+        initialization="xavier_uniform",
     )
     config.TrainConfig = dict(
         epochs=300000,
         loss_weights=dict(
             res_loss=1.0,
-            flux_loss=10.0,
             u_ic=10.0,
             u_bc=10.0,
         ),
-        history_terms=["res_loss", "flux_loss", "u_ic", "F_ic", "u_bc", "F_bc"],
+        history_terms=["res_loss", "u_ic", "u_bc"],
         optimizer="Adam",
         lr=1e-3,
         decay="CosineAnnealing",
@@ -46,14 +46,13 @@ def get_config() -> ConfigDict:
         checkpoint_every=1000,
     )
     config.model = "burgers"
-    config.plot_label = "RelaxNN"
+    config.plot_label = "PINN"
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
     # By default, runs are saved to output_root/experiment_name/timestamp.
-    config.output_root = str(_REPO_ROOT / "_output" / "relaxnn" / "burgers" / "riemann")
+    config.output_root = str(_REPO_ROOT / "_output" / "pinn" / "burgers" / "riemann")
     config.experiment_name = (
-        "adam_cosine_eta1e6_300000_mc_10000_1000_1000_"
-        "tanh_xavier_uniform_w1_10_10_10n64"
+        "adam_cosine_eta1e6_300000_mc_10000_1000_1000_tanh_xavier_uniform_w1_10_10_n64"
     )
     config.root_dir = ""
     config.timestamp = ""

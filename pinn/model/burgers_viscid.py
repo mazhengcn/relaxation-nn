@@ -18,6 +18,7 @@ class BurgersNet(torch.nn.Module):
         if config.loss == "MSE":
             self.loss_fn = basic.PDElossfn()
         self.ibc_type = config.ibc_type
+        self.viscosity = 0.01 / math.pi
 
     def forward(self, x):
         return self._u(x)
@@ -28,8 +29,9 @@ class BurgersNet(torch.nn.Module):
 
     def interior_loss(self, x):
         x = x.to(torch.float32)
+        u = self.forward(x)
         tt, xx = x.hsplit(2)
-        
+
         def q_fn(t, x_coord):
             return self.forward(torch.cat([t, x_coord], dim=-1))
 
@@ -38,7 +40,24 @@ class BurgersNet(torch.nn.Module):
 
         q_t = vmap(jacrev(q_fn, argnums=0), in_dims=(0, 0))(tt, xx).squeeze(-1)
         f_x = vmap(jacrev(f_fn, argnums=1), in_dims=(0, 0))(tt, xx).squeeze(-1)
-        L_eq = self.loss_fn(q_t, -f_x)
+        grad_u = torch.autograd.grad(
+            outputs=u,
+            inputs=x,
+            grad_outputs=torch.ones_like(u),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        u_x = grad_u[:, 1:2]
+        grad_u_x = torch.autograd.grad(
+            outputs=u_x,
+            inputs=x,
+            grad_outputs=torch.ones_like(u_x),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        u_xx = grad_u_x[:, 1:2]
+        residual = q_t + f_x - self.viscosity * u_xx
+        L_eq = self.loss_fn(residual, torch.zeros_like(residual))
         L_flux = torch.zeros((), device=x.device, dtype=x.dtype)
         return L_eq, L_flux
 

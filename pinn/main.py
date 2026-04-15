@@ -7,7 +7,7 @@ if __package__ in (None, ""):
 import torch
 from absl import app, flags, logging
 from ml_collections import config_flags
-from pinn.model import burgers
+from pinn.model import burgers, burgers_viscid, euler, swe
 from shared import generator, train
 from shared.runtime import DEVICE
 
@@ -17,6 +17,9 @@ FLAGS = flags.FLAGS
 
 model_dict = {
     "burgers": burgers.BurgersNet,
+    "burgers_viscid": burgers_viscid.BurgersNet,
+    "swe": swe.SweNet,
+    "euler": euler.EulerNet,
 }
 
 
@@ -44,6 +47,22 @@ def _prepare_run_dirs(root_dir, timestamp):
     model_dir.mkdir(exist_ok=True)
     lr_dir.mkdir(exist_ok=True)
     return time_dir, csv_path, model_dir, lr_dir
+
+
+def _resolve_root_dir(config):
+    if "root_dir" in config and config.root_dir:
+        return Path(config.root_dir)
+
+    if "output_root" in config and config.output_root:
+        root_dir = Path(config.output_root)
+        if "experiment_name" in config and config.experiment_name:
+            root_dir = root_dir / config.experiment_name
+        return root_dir
+
+    raise ValueError(
+        "Config must set `root_dir` or set `output_root` "
+        "and optionally `experiment_name`."
+    )
 
 
 def save_config(config, save_path):
@@ -75,8 +94,12 @@ def run_with_config(config):
         if config.DataConfig.sampling_strategy != "fixed_grid" and "interior_grid_shape" in config.DataConfig:
             del config.DataConfig["interior_grid_shape"]
 
+    root_dir = _resolve_root_dir(config)
+    with config.unlocked():
+        config.root_dir = str(root_dir)
+
     time_dir, csv_path, model_dir, lr_dir = _prepare_run_dirs(
-        config.root_dir, config.timestamp
+        root_dir, config.timestamp
     )
 
     mygenerator = generator.Generator(config.DataConfig)

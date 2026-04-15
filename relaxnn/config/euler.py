@@ -8,7 +8,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path=str(_REPO_ROOT / "data" / "clawpack_data" / "euler_shocktube.npy"),
+        testdata_path=str(
+            _REPO_ROOT / "data" / "clawpack_data" / "euler_shocktube.npy"
+        ),
         distribution="uniform",
         range_L=[0.0, -0.8],
         range_R=[0.4, 0.8],
@@ -25,9 +27,8 @@ def get_config() -> ConfigDict:
         loss="MSE",
     )
     config.TrainConfig = dict(
-        epochs=600001,
+        epochs=600000,
         ratio=[0.1, 1.0, 1.0, 1.0],
-        int_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         optimizer="Adam",
         lr=1e-3,
         decay="Exponential",

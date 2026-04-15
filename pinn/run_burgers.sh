@@ -2,20 +2,16 @@
 
 set -euo pipefail
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+CONFIG_PATH="${CONFIG_PATH:-${SCRIPT_DIR}/config/burgers.py}"
 RUN_ID="${RUN_ID:-$(date +"%Y-%m-%dT%H-%M-%S")}"
-ROOT_DIR="${ROOT_DIR:-${REPO_ROOT}/_output/pinn/burgers/sine}"
 TORCH_SEED="${TORCH_SEED:-1}"
 
 "${PYTHON_BIN}" -m pinn.main \
-    --config="${SCRIPT_DIR}/config/burgers_sine.py" \
-    --config.root_dir="${ROOT_DIR}" \
+    --config="${CONFIG_PATH}" \
     --config.timestamp="${RUN_ID}" \
     --config.torch_seed="${TORCH_SEED}" \
     --alsologtostderr="true" \
     "$@"
-
