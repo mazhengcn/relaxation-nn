@@ -1,31 +1,48 @@
-import math
-
 import torch
 from ml_collections import ConfigDict
-from relaxnn.model import basic
 from torch.func import jacrev, vmap
+
+from relaxnn.model import basic
 
 
 class EulerNet(torch.nn.Module):
     def __init__(self, config: ConfigDict):
         super().__init__()
         self._rho = basic.Net(
-            config.layer_sizes[0], config.activation[0], config.configuration[0]
+            config.layer_sizes[0],
+            config.activation[0],
+            config.configuration[0],
+            config.initialization[0],
         )
         self._u = basic.Net(
-            config.layer_sizes[0], config.activation[0], config.configuration[0]
+            config.layer_sizes[0],
+            config.activation[0],
+            config.configuration[0],
+            config.initialization[0],
         )
         self._p = basic.Net(
-            config.layer_sizes[0], config.activation[0], config.configuration[0]
+            config.layer_sizes[0],
+            config.activation[0],
+            config.configuration[0],
+            config.initialization[0],
         )
         self._flux_rhou = basic.Net(
-            config.layer_sizes[1], config.activation[1], config.configuration[1]
+            config.layer_sizes[1],
+            config.activation[1],
+            config.configuration[1],
+            config.initialization[1],
         )
         self._flux_rhou2p = basic.Net(
-            config.layer_sizes[1], config.activation[1], config.configuration[1]
+            config.layer_sizes[1],
+            config.activation[1],
+            config.configuration[1],
+            config.initialization[1],
         )
         self._flux_uEp = basic.Net(
-            config.layer_sizes[1], config.activation[1], config.configuration[1]
+            config.layer_sizes[1],
+            config.activation[1],
+            config.configuration[1],
+            config.initialization[1],
         )
         if config.loss == "MSE":
             self.loss_fn = basic.PDElossfn()

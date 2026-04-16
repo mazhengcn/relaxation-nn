@@ -9,10 +9,16 @@ class SweNet(torch.nn.Module):
     def __init__(self, config: ConfigDict):
         super().__init__()
         self._state_net = basic.Net(
-            config.layer_sizes[0], config.activation[0], config.configuration[0]
+            config.layer_sizes[0],
+            config.activation[0],
+            config.configuration[0],
+            config.initialization[0],
         )
         self._flux_net = basic.Net(
-            config.layer_sizes[1], config.activation[1], config.configuration[1]
+            config.layer_sizes[1],
+            config.activation[1],
+            config.configuration[1],
+            config.initialization[1],
         )
         if config.loss == "MSE":
             self.loss_fn = basic.PDElossfn()

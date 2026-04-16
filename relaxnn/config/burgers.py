@@ -23,7 +23,7 @@ def get_config() -> ConfigDict:
         ],
         configuration=["DNN", "DNN"],
         activation=["tanh", "tanh"],
-        initialization="xavier_uniform",
+        initialization=["xavier_uniform", "xavier_uniform"],
         ibc_type=["riemann", "riemann"],
         loss="MSE",
     )
