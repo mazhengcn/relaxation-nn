@@ -24,10 +24,21 @@ def train_step(
     batch,
 ):
     """Train for a single step."""
-    grad_fn = nnx.value_and_grad(equation.loss, has_aux=True)
-    (total_loss, loss_dict), grads = grad_fn(model, batch)
+    graphdef, params, nondiff = nnx.split(model, nnx.Param, ...)
+
+    def loss_fn(params):
+        return equation.loss(nnx.merge(graphdef, params, nondiff), batch)
+
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    (total_loss, loss_dict), grads = grad_fn(params)
     metrics.update(total_loss=total_loss, **loss_dict)  # In-place updates.
-    optimizer.update(model, grads)  # In-place updates.
+    optimizer.update(
+        model,
+        grads,
+        grad=grads,
+        value=total_loss,
+        value_fn=lambda state: loss_fn(state)[0],
+    )  # In-place updates.
 
 
 @nnx.jit

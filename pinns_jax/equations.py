@@ -55,14 +55,13 @@ class Burgers1D(BaseEquation):
             self.loss_fn = lambda x: jnp.mean(x**2)
 
     def residual(self, u: Solution, x: jax.Array, t: jax.Array):
-        x = jnp.squeeze(x)
-        t = jnp.squeeze(t)
         u_x_fn = jax.grad(u, argnums=0)
         u_t_fn = jax.grad(u, argnums=1)
-        u_x = u_x_fn(x, t)
-        u_xx = jax.grad(u_x_fn, argnums=0)(x, t)
+        # u_x = u_x_fn(x, t)
+        flux_x = jax.grad(lambda x, t: 0.5 * u(x, t) ** 2, argnums=0)(x, t)
+        u_xx = jax.grad(lambda x, t: u_x_fn(x, t).squeeze(-1), argnums=0)(x, t)
         u_t = u_t_fn(x, t)
-        return u_t + u(x, t) * u_x - self.nu * u_xx
+        return u_t + flux_x - self.nu * u_xx
 
     def initial_condition(self, u: Solution, x: jax.Array, t: jax.Array):
         return u(x, t) - self.initial_condition_fn(x)

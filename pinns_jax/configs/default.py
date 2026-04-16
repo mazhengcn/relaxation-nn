@@ -53,7 +53,7 @@ def get_config():
     config.learning_rate = 1e-3
 
     # Scheduler: "exponential_decay", "cosine_decay", or "constant".
-    config.scheduler = "exponential_decay"
+    config.scheduler = "cosine_decay"
     config.scheduler_transition_steps = 5_000
     config.scheduler_decay_rate = 0.9
     config.scheduler_staircase = False
@@ -78,6 +78,5 @@ def get_config():
     config.restore_checkpoint = ""
 
     # Integer for PRNG random seed.
-    config.seed = 0
-
+    config.seed = 42
     return config
