@@ -30,9 +30,9 @@ def get_config() -> ConfigDict:
     config.TrainConfig = dict(
         epochs=600000,
         loss_weights=dict(
-            res_loss=1.0,
-            u_ic=10.0,
-            u_bc=10.0,
+            res_loss=0.1,
+            u_ic=1.0,
+            u_bc=1.0,
         ),
         history_terms=["res_loss", "u_ic", "u_bc"],
         optimizer="Adam",

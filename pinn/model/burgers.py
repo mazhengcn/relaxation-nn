@@ -13,7 +13,7 @@ class BurgersNet(torch.nn.Module):
             config.layer_sizes,
             config.activation,
             config.configuration,
-            initialization=getattr(config, "initialization", "kaiming_uniform"),
+            initialization=config.initialization,
         )
         if config.loss == "MSE":
             self.loss_fn = basic.PDElossfn()

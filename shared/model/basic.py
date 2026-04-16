@@ -22,7 +22,7 @@ class Net(nn.Module):
         layer_sizes: list,
         activation: str,
         configuration: str,
-        initialization: str = "kaiming_uniform",
+        initialization: str = "xavier_uniform",
     ) -> None:
         super().__init__()
         self._layer_sizes = layer_sizes
