@@ -86,7 +86,6 @@ def run_with_config(config):
     mygenerator = generator.Generator(config.DataConfig)
     save_config(config, time_dir)
     logging.get_absl_handler().use_absl_log_file("train", time_dir)
-    mygenerator.export_reference_samples(time_dir / "reference_samples.npz")
     x_test, q_test = mygenerator.load_testdata()
     model = MODEL_DICT[config.model](config.NetConfig).to(DEVICE)
 

@@ -6,11 +6,12 @@ import numpy as np
 import torch
 from ml_collections import ConfigDict
 from smt.sampling_methods import LHS
-from shared import cartesian
-from shared.runtime import DEVICE
 from torch import nan
 from torch.distributions import constraints
 from torch.distributions.utils import broadcast_all
+
+from shared import cartesian
+from shared.runtime import DEVICE
 
 
 class Uniform(torch.distributions.Distribution):
@@ -73,7 +74,9 @@ class BCsampler:
 
 class LHSSampler:
     def __init__(self, low, high, criterion, seed=None):
-        xlimits = np.stack([low.detach().cpu().numpy(), high.detach().cpu().numpy()], axis=-1)
+        xlimits = np.stack(
+            [low.detach().cpu().numpy(), high.detach().cpu().numpy()], axis=-1
+        )
         self.sampler = LHS(xlimits=xlimits, criterion=criterion, seed=seed)
 
     def rsample(self, sample_shape=torch.Size()):
@@ -84,7 +87,9 @@ class LHSSampler:
 
 class LHSBoundarySampler:
     def __init__(self, low, high, criterion, seed=None):
-        self.xrange = torch.tensor([[low[1]], [high[1]]], dtype=torch.float32, device=DEVICE)
+        self.xrange = torch.tensor(
+            [[low[1]], [high[1]]], dtype=torch.float32, device=DEVICE
+        )
         xlimits = np.array([[low[0].item(), high[0].item()]], dtype=np.float64)
         self.tsampler = LHS(xlimits=xlimits, criterion=criterion, seed=seed)
 
@@ -129,18 +134,6 @@ class Generator:
         icsamples = self.icsampler.rsample((self.icbatch,))
         bcsamples = self.bcsampler.rsample((self.bcbatch,))
         return intsamples, icsamples, bcsamples
-
-    def export_reference_samples(self, save_path):
-        if self._fixed_samples is None:
-            return
-
-        intsamples, icsamples, bcsamples = self._fixed_samples
-        np.savez(
-            save_path,
-            interior=intsamples.detach().cpu().numpy(),
-            initial=icsamples.detach().cpu().numpy(),
-            boundary=bcsamples.detach().cpu().numpy(),
-        )
 
     def _build_fixed_samples(self):
         intsamples = self._build_interior_grid()
@@ -261,14 +254,4 @@ class Generator:
     def load_testdata(self):
         data = np.load(self.load_path)
         x_test, q_test = data[:, 0:2], data[:, 2 : data.shape[1]]
-        if self.eval_time_window:
-            if len(self.eval_time_window) != 2:
-                raise ValueError("eval_time_window must have exactly two entries")
-            t_low, t_high = self.eval_time_window
-            # Numerical grids often store values like 0.6000000000000001, so use
-            # a small tolerance when filtering by time window.
-            tol = 1e-12 * max(1.0, abs(float(t_low)), abs(float(t_high)))
-            mask = (x_test[:, 0] >= t_low - tol) & (x_test[:, 0] <= t_high + tol)
-            x_test = x_test[mask]
-            q_test = q_test[mask]
         return x_test, q_test

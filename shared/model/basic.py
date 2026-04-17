@@ -52,6 +52,9 @@ class Net(nn.Module):
         return y
 
     def _initialize_layers(self, initialization: str):
+        if initialization == "pytorch_default":
+            return
+
         # gain = nn.init.calculate_gain(self._activation_name)
         gain = 1.0
         for layer in self.layers:

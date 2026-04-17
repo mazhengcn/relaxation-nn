@@ -45,7 +45,7 @@ class EulerNet(torch.nn.Module):
         u = self._u(inputs)
         p = self._p(inputs)
         momentum = rho * u
-        energy = 0.5 * p + 0.5 * rho * u**2
+        energy = 2.5 * p + 0.5 * rho * u**2
         return torch.cat((rho, momentum, energy), dim=-1)
 
     def f(self, t, x):
@@ -65,7 +65,7 @@ class EulerNet(torch.nn.Module):
         rho = self._rho(x)
         u = self._u(x)
         p = self._p(x)
-        energy = 0.5 * p + 0.5 * rho * u**2
+        energy = 2.5 * p + 0.5 * rho * u**2
         uEp = u * (energy + p)
         return uEp
 
@@ -120,18 +120,6 @@ class EulerNet(torch.nn.Module):
             velocity = u_l * (x[:, 1:2] <= xc) + u_r * (x[:, 1:2] > xc)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
             return torch.cat((rho, velocity, pressure), dim=-1)
-        elif self.ibc_type[0] == "shu_osher":
-            xc = torch.tensor(-4.0)
-            rho_l = torch.tensor(3.857143)
-            velocity_l = torch.tensor(2.629369)
-            pressure_l = torch.tensor(10.33333)
-            pressure_r = torch.tensor(1.0)
-            rho = rho_l * (x[:, 1:2] < xc) + (
-                1.0 + self.epsilon * torch.sin(5 * xc)
-            ) * (x[:, 1:2] >= xc)
-            velocity = velocity_l * (x[:, 1:2] < xc)
-            pressure = pressure_l * (x[:, 1:2] < xc) + pressure_r * (x[:, 1:2] >= xc)
-            return torch.cat((rho, velocity, pressure), dim=-1)
         elif self.ibc_type[0] == "blast":
             xl = -0.1
             xr = 0.1
@@ -171,18 +159,6 @@ class EulerNet(torch.nn.Module):
             rho = rho_l * (x[:, 1:2] <= xc) + rho_r * (x[:, 1:2] > xc)
             velocity = u_l * (x[:, 1:2] <= xc) + u_r * (x[:, 1:2] > xc)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
-            return torch.cat((rho, velocity, pressure), dim=-1)
-        elif self.ibc_type[1] == "shu_osher":
-            xc = torch.tensor(-4.0)
-            rho_l = torch.tensor(3.857143)
-            velocity_l = torch.tensor(2.629369)
-            pressure_l = torch.tensor(10.33333)
-            pressure_r = torch.tensor(1.0)
-            rho = rho_l * (x[:, 1:2] < xc) + (
-                1.0 + self.epsilon * torch.sin(5 * xc)
-            ) * (x[:, 1:2] >= xc)
-            velocity = velocity_l * (x[:, 1:2] < xc)
-            pressure = pressure_l * (x[:, 1:2] < xc) + pressure_r * (x[:, 1:2] >= xc)
             return torch.cat((rho, velocity, pressure), dim=-1)
         elif self.ibc_type[1] == "blast":
             xl = -0.1
