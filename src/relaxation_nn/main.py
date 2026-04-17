@@ -181,6 +181,7 @@ def run_with_config(config):
         raise ValueError("other mode have not been implemented")
 
 
+@app.run
 def main(argv):
     del argv
     run_with_config(FLAGS.config)
