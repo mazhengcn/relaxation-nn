@@ -1,0 +1,25 @@
+[project]
+name = "wpinns"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Zheng Ma", email = "mazhengcn@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "ml-collections>=1.1.0",
+    "numpy>=2.4.4",
+    "pinns-utils-torch",
+    "torch>=2.11.0",
+]
+
+[project.scripts]
+wpinns = "wpinns:main"
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+pinns-utils-torch = { workspace = true }
