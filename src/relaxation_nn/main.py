@@ -185,7 +185,3 @@ def run_with_config(config):
 def main(argv):
     del argv
     run_with_config(FLAGS.config)
-
-
-if __name__ == "__main__":
-    app.run(main)
