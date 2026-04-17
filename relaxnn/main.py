@@ -25,36 +25,6 @@ model_dict = {
 }
 
 
-def _format_elapsed_seconds(seconds):
-    total_seconds = max(0, int(round(float(seconds))))
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, secs = divmod(remainder, 60)
-    return "{:02d}:{:02d}:{:02d}".format(hours, minutes, secs)
-
-
-def _log_training_summary(time_dir: Path, summary: dict):
-    if not summary:
-        return
-
-    elapsed_seconds = float(summary.get("elapsed_seconds", 0.0))
-    logging.info(
-        "Training summary | status : {} | final_epoch : {} | final_total_loss : {} | "
-        "best_MAE : {} @ {} | best_L2RE : {} @ {} | elapsed_seconds : {:.2f} | "
-        "elapsed_hms : {} | output_dir : {}".format(
-            summary.get("status"),
-            summary.get("final_epoch"),
-            summary.get("final_total_loss"),
-            summary.get("best_mae"),
-            summary.get("best_mae_epoch"),
-            summary.get("best_l2re"),
-            summary.get("best_l2re_epoch"),
-            elapsed_seconds,
-            _format_elapsed_seconds(elapsed_seconds),
-            time_dir,
-        )
-    )
-
-
 def _prepare_run_dirs(root_dir, timestamp):
     if not isinstance(root_dir, Path):
         root_dir = Path(root_dir)
@@ -162,7 +132,7 @@ def run_with_config(config):
     # model.load_state_dict(torch.load(model_path))
 
     if config.train_mode == "train":
-        summary = train.train(
+        train.train(
             device=DEVICE,
             datagenerator=mygenerator,
             x_test=x_test,
@@ -173,8 +143,7 @@ def run_with_config(config):
             model_dir=model_dir,
             lr_dir=lr_dir,
         )
-        _log_training_summary(time_dir, summary)
-        return time_dir, summary
+        return time_dir, {}
     else:
         raise ValueError("other mode have not been implemented")
 
