@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ml_collections import ConfigDict, config_dict
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def get_config() -> ConfigDict:

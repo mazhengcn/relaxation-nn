@@ -1557,7 +1557,7 @@ wheels = [
 [[package]]
 name = "relaxation-nn"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "ml-collections" },
     { name = "numpy" },
