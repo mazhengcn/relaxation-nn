@@ -21,13 +21,13 @@ def get_config() -> ConfigDict:
         ],
         configuration=["DNN", "DNN"],
         activation=["tanh", "tanh"],
-        initialization=["pytorch_default", "pytorch_default"],
+        initialization=["xavier_uniform", "xavier_uniform"],
         ibc_type=["lax_tube", "lax_tube"],
         loss="MSE",
     )
     config.TrainConfig = dict(
         epochs=600000,
-        ratio=[1.0, 10.0, 100.0, 100.0],
+        ratio=[10.0, 10.0, 100.0, 100.0],
         int_weights=[1.0, 0.5, 0.1, 1.0],
         optimizer="Adam",
         lr=1e-3,

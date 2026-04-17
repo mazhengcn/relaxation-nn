@@ -2019,15 +2019,24 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "absl-py" },
+    { name = "matplotlib" },
+    { name = "ml-collections" },
+    { name = "numpy" },
+    { name = "smt" },
+    { name = "torch" },
+]
+
+[package.optional-dependencies]
+jax = [
     { name = "clu" },
+    { name = "etils", extra = ["epath"] },
     { name = "flax" },
     { name = "grain" },
     { name = "jax", extra = ["cuda13"] },
+    { name = "optax" },
     { name = "orbax-checkpoint" },
-    { name = "smt" },
     { name = "tensorboard" },
     { name = "tensorflow-cpu" },
-    { name = "torch" },
 ]
 
 [package.dev-dependencies]
@@ -2039,16 +2048,22 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "absl-py", specifier = ">=2.4.0" },
-    { name = "clu", specifier = ">=0.0.12" },
-    { name = "flax", specifier = ">=0.12.6" },
-    { name = "grain", specifier = ">=0.2.16" },
-    { name = "jax", extras = ["cuda13"], specifier = ">=0.9.2" },
-    { name = "orbax-checkpoint", specifier = ">=0.11.33" },
+    { name = "clu", marker = "extra == 'jax'", specifier = ">=0.0.12" },
+    { name = "etils", extras = ["epath"], marker = "extra == 'jax'", specifier = ">=1.14.0" },
+    { name = "flax", marker = "extra == 'jax'", specifier = ">=0.12.6" },
+    { name = "grain", marker = "extra == 'jax'", specifier = ">=0.2.16" },
+    { name = "jax", extras = ["cuda13"], marker = "extra == 'jax'", specifier = ">=0.9.2" },
+    { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "ml-collections", specifier = ">=1.1.0" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "optax", marker = "extra == 'jax'", specifier = ">=0.2.8" },
+    { name = "orbax-checkpoint", marker = "extra == 'jax'", specifier = ">=0.11.36" },
     { name = "smt", specifier = ">=2.13.0" },
-    { name = "tensorboard", specifier = ">=2.20.0" },
-    { name = "tensorflow-cpu", specifier = ">=2.21.0" },
+    { name = "tensorboard", marker = "extra == 'jax'", specifier = ">=2.20.0" },
+    { name = "tensorflow-cpu", marker = "extra == 'jax'", specifier = ">=2.21.0" },
     { name = "torch", specifier = ">=2.11.0" },
 ]
+provides-extras = ["jax"]
 
 [package.metadata.requires-dev]
 dev = [
