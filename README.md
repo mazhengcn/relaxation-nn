@@ -20,9 +20,9 @@ Install & Setup
 ---------------
 
 This code has been tested and confirmed to work with the following versions:
-* PYTHON 3.10.12
-* PYTORCH 2.3.0
-* NUMPY 1.24.4
+* PYTHON 3.12+
+* PYTORCH 2.11.0
+* NUMPY 2.4.4
 
 Install RelaxNN with the following commands:
 
@@ -33,17 +33,25 @@ We recommend using `uv` to manage the experiment environment:
 ```bash
 git clone git@github.com:mazhengcn/relaxation-nn.git
 cd relaxation-nn
-uv python install 3.10.12
+uv python install 3.12
 uv sync
 ```
 
-For the default training dependency set, install PyTorch 2.3.0 with:
+The default `uv sync` command installs the base RelaxNN environment only.
+
+If you also need the optional `pinns_jax` stack, install the JAX extra with:
 
 ```bash
-uv sync --extra train
+uv sync --extra jax
 ```
 
-If your machine needs a specific CUDA build of PyTorch, keep the base `uv` workflow above and replace the default `torch==2.3.0` installation inside the environment with the wheel recommended by the official PyTorch selector.
+If your machine needs a specific CUDA build of PyTorch, keep the base `uv` workflow above and replace the default `torch` installation inside the environment with the wheel recommended by the official PyTorch selector.
+
+If you want to run the JAX-specific tests, use:
+
+```bash
+uv run pytest pinns_jax
+```
 
 Quickstart
 -----

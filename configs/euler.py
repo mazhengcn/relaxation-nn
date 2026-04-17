@@ -27,12 +27,13 @@ def get_config() -> ConfigDict:
     )
     config.TrainConfig = dict(
         epochs=600000,
-        ratio=[0.01, 1.0, 5.0, 5.0],
+        ratio=[10.0, 10.0, 100.0, 100.0],
+        int_weights=[1.0, 0.5, 0.1, 1.0],
         optimizer="Adam",
         lr=1e-3,
-        decay="CosineAnnealing",
-        scheduler_every=1,
-        cosine_eta_min=1e-6,
+        decay="Exponential",
+        scheduler_every=1000,
+        decay_rate=0.99,
     )
     config.model = "euler_v3"
     config.train_mode = "train"

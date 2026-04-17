@@ -56,7 +56,7 @@ class EulerNet(torch.nn.Module):
         u = self._u(inputs)
         p = self._p(inputs)
         momentum = rho * u
-        energy = 0.5 * p + 0.5 * rho * u**2
+        energy = 2.5 * p + 0.5 * rho * u**2
         return torch.cat((rho, momentum, energy), dim=-1)
 
     def f(self, t, x):
@@ -75,7 +75,7 @@ class EulerNet(torch.nn.Module):
         rho = self._rho(x)
         u = self._u(x)
         p = self._p(x)
-        energy = 0.5 * p + 0.5 * rho * u**2
+        energy = 2.5 * p + 0.5 * rho * u**2
         momentum = rho * u
         rhou2p = rho * u**2 + p
         uEp = u * (energy + p)

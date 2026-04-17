@@ -135,18 +135,6 @@ class Generator:
         bcsamples = self.bcsampler.rsample((self.bcbatch,))
         return intsamples, icsamples, bcsamples
 
-    def export_reference_samples(self, save_path):
-        if self._fixed_samples is None:
-            return
-
-        intsamples, icsamples, bcsamples = self._fixed_samples
-        np.savez(
-            save_path,
-            interior=intsamples.detach().cpu().numpy(),
-            initial=icsamples.detach().cpu().numpy(),
-            boundary=bcsamples.detach().cpu().numpy(),
-        )
-
     def _build_fixed_samples(self):
         intsamples = self._build_interior_grid()
         icsamples = self._build_initial_grid()
@@ -266,14 +254,4 @@ class Generator:
     def load_testdata(self):
         data = np.load(self.load_path)
         x_test, q_test = data[:, 0:2], data[:, 2 : data.shape[1]]
-        if self.eval_time_window:
-            if len(self.eval_time_window) != 2:
-                raise ValueError("eval_time_window must have exactly two entries")
-            t_low, t_high = self.eval_time_window
-            # Numerical grids often store values like 0.6000000000000001, so use
-            # a small tolerance when filtering by time window.
-            tol = 1e-12 * max(1.0, abs(float(t_low)), abs(float(t_high)))
-            mask = (x_test[:, 0] >= t_low - tol) & (x_test[:, 0] <= t_high + tol)
-            x_test = x_test[mask]
-            q_test = q_test[mask]
         return x_test, q_test
