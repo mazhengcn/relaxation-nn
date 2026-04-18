@@ -35,23 +35,54 @@ class EulerNet(torch.nn.Module):
             self.loss_fn = basic.PDElossfn()
         self.ibc_type = config.ibc_type
 
+        self.register_buffer("x_L", torch.tensor(config.x_L, dtype=torch.float32))
+        self.register_buffer("x_R", torch.tensor(config.x_R, dtype=torch.float32))
+        rho_L, u_L, p_L, rho_R, u_R, p_R = self._get_boundary_values(config.ibc_type)
+        self.register_buffer("rho_L", torch.tensor(rho_L, dtype=torch.float32))
+        self.register_buffer("rho_R", torch.tensor(rho_R, dtype=torch.float32))
+        self.register_buffer("u_L", torch.tensor(u_L, dtype=torch.float32))
+        self.register_buffer("u_R", torch.tensor(u_R, dtype=torch.float32))
+        self.register_buffer("p_L", torch.tensor(p_L, dtype=torch.float32))
+        self.register_buffer("p_R", torch.tensor(p_R, dtype=torch.float32))
+
+    @staticmethod
+    def _get_boundary_values(ibc_type):
+        bc = ibc_type[1]
+        if bc == "shock_tube":
+            return 1.0, 0.0, 1.0, 0.125, 0.0, 0.1
+        elif bc == "lax_tube":
+            return 0.445, 0.698, 3.528, 0.5, 0.0, 0.571
+        elif bc == "blast":
+            return 1.0, 0.0, 1.0, 1.0, 0.0, 1.0
+        else:
+            raise ValueError(f"Unknown ibc_type: {bc}")
+
+    def _physics(self, inputs):
+        """Apply BC-encoding transformation to raw network outputs."""
+        x = inputs[..., 1:2]
+        alpha = (self.x_R - x) / (self.x_R - self.x_L)  # ty: ignore
+        beta = (x - self.x_L) / (self.x_R - self.x_L)  # ty: ignore
+        phi = (x - self.x_L) * (self.x_R - x)
+
+        rho = self.rho_L**alpha * self.rho_R**beta * torch.exp(phi * self._rho(inputs))
+        u = torch.sqrt(phi) * self._u(inputs) + alpha * self.u_L + beta * self.u_R
+        p = self.p_L**alpha * self.p_R**beta * torch.exp(phi * self._p(inputs))
+        return rho, u, p
+
     def forward(self, x):
-        return torch.cat((self._rho(x), self._u(x), self._p(x)), dim=-1)
+        rho, u, p = self._physics(x)
+        return torch.cat((rho, u, p), dim=-1)
 
     def q(self, t, x):
         inputs = torch.hstack((t, x))
-        rho = self._rho(inputs)
-        u = self._u(inputs)
-        p = self._p(inputs)
+        rho, u, p = self._physics(inputs)
         momentum = rho * u
         energy = 2.5 * p + 0.5 * rho * u**2
         return torch.cat((rho, momentum, energy), dim=-1)
 
     def f(self, t, x):
         inputs = torch.hstack((t, x))
-        rho = self._rho(inputs)
-        u = self._u(inputs)
-        p = self._p(inputs)
+        rho, u, p = self._physics(inputs)
         momentum = rho * u
         rhou2p = rho * u**2 + p
         flux_uEp = self._flux_uEp(inputs)
@@ -61,9 +92,7 @@ class EulerNet(torch.nn.Module):
         return self._flux_uEp(x)
 
     def flux_true(self, x):
-        rho = self._rho(x)
-        u = self._u(x)
-        p = self._p(x)
+        rho, u, p = self._physics(x)
         energy = 2.5 * p + 0.5 * rho * u**2
         uEp = u * (energy + p)
         return uEp
