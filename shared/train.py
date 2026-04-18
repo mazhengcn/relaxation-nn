@@ -1,11 +1,20 @@
 import csv
-import inspect
 from pathlib import Path
 
 import numpy as np
 import torch
 from absl import logging
 from ml_collections import ConfigDict
+
+_LOSS_TERM_NAMES = (
+    "total",
+    "res_loss",
+    "flux_loss",
+    "u_ic",
+    "F_ic",
+    "u_bc",
+    "F_bc",
+)
 
 
 def train(
@@ -19,9 +28,7 @@ def train(
     model_dir: Path,
     lr_dir: Path,
 ):
-    int_weights = None
-    if hasattr(config, "int_weights"):
-        int_weights = torch.tensor(config.int_weights, dtype=torch.float32).to(device)
+    int_weights = torch.tensor(config.int_weights, dtype=torch.float32).to(device)
     history_every = getattr(config, "history_every", 1000)
     log_every = getattr(config, "log_every", 1000)
     checkpoint_every = getattr(config, "checkpoint_every", 1000)
@@ -35,13 +42,9 @@ def train(
     optimization_schedule = _build_optimization_schedule(model, config)
     active_phase = _phase_for_epoch(optimization_schedule, 0)
     optimizer = active_phase["optimizer"]
+    loss_step = _build_loss_step(model, config, int_weights)
 
-    initial_terms = _compute_loss_terms(
-        model,
-        *datagenerator.samples(),
-        int_weights=int_weights,
-        config=config,
-    )
+    initial_terms = _loss_values_to_terms(loss_step(*datagenerator.samples()))
     history_terms = _resolve_history_terms(config, initial_terms)
     _write_history_header(csv_path, history_terms)
     _record_state(
@@ -67,34 +70,25 @@ def train(
         scheduler_every = active_phase["scheduler_every"]
         batch = datagenerator.samples()
         if active_phase["mode"] == "Adam":
-            loss_terms = _compute_loss_terms(
-                model,
-                *batch,
-                int_weights=int_weights,
-                config=config,
-            )
-            optimizer.zero_grad()
-            loss_terms["total"].backward()
+            optimizer.zero_grad(set_to_none=True)
+            loss_values = loss_step(*batch)
+            loss_values[0].backward()
             optimizer.step()
+            loss_terms = _loss_values_to_terms(loss_values)
             if scheduler is not None and epoch % scheduler_every == 0:
                 scheduler.step()
         elif active_phase["mode"] == "LBFGS":
             closure_cache = {}
 
             def closure():
-                optimizer.zero_grad()
-                current_terms = _compute_loss_terms(
-                    model,
-                    *batch,
-                    int_weights=int_weights,
-                    config=config,
-                )
-                current_terms["total"].backward()
-                closure_cache["terms"] = _detach_loss_terms(current_terms)
-                return current_terms["total"]
+                optimizer.zero_grad(set_to_none=True)
+                current_values = loss_step(*batch)
+                current_values[0].backward()
+                closure_cache["values"] = _detach_loss_values(current_values)
+                return current_values[0]
 
             optimizer.step(closure)
-            loss_terms = closure_cache["terms"]
+            loss_terms = _loss_values_to_terms(closure_cache["values"])
         else:
             raise ValueError("other optimizer have not been implemented")
 
@@ -272,44 +266,46 @@ def _build_lbfgs_optimizer(
     )
 
 
-def _compute_loss_terms(
+def _build_loss_step(
     model: torch.nn.Module,
-    x_int: torch.Tensor,
-    x_ic: torch.Tensor,
-    x_bc: torch.Tensor,
-    int_weights: torch.Tensor,
     config: ConfigDict,
+    int_weights: torch.Tensor,
 ):
-    x_int = _prepare_batch_tensor(x_int)
-    x_ic = _prepare_batch_tensor(x_ic)
-    x_bc = _prepare_batch_tensor(x_bc)
+    ratio = config.ratio
+    res_weight = float(ratio[0])
+    flux_weight = float(ratio[1])
+    u_ic_weight = float(ratio[2])
+    u_bc_weight = float(ratio[3])
 
-    if hasattr(model, "compute_loss_terms"):
-        loss_terms = model.compute_loss_terms(
-            x_int=x_int,
-            x_ic=x_ic,
-            x_bc=x_bc,
-            int_weights=int_weights,
-        )
-    else:
-        res_loss, flux_loss = _call_interior_loss(
-            model=model,
-            x_int=x_int,
-            int_weights=int_weights,
-        )
+    def loss_step(x_int: torch.Tensor, x_ic: torch.Tensor, x_bc: torch.Tensor):
+        x_int = _prepare_batch_tensor(x_int)
+        x_ic = _prepare_batch_tensor(x_ic)
+        x_bc = _prepare_batch_tensor(x_bc)
+        res_loss, flux_loss = model.interior_loss(x_int, int_weights)
         u_ic_loss, F_ic_loss = model.init_loss(x_ic)
         u_bc_loss, F_bc_loss = model.bc_loss(x_bc)
-        loss_terms = {
-            "res_loss": res_loss,
-            "flux_loss": flux_loss,
-            "u_ic": u_ic_loss,
-            "F_ic": F_ic_loss,
-            "u_bc": u_bc_loss,
-            "F_bc": F_bc_loss,
-        }
+        total_loss = (
+            res_weight * res_loss
+            + flux_weight * flux_loss
+            + u_ic_weight * u_ic_loss
+            + u_bc_weight * u_bc_loss
+        )
+        return (
+            total_loss,
+            res_loss,
+            flux_loss,
+            u_ic_loss,
+            F_ic_loss,
+            u_bc_loss,
+            F_bc_loss,
+        )
 
-    total_loss = _sum_weighted_losses(loss_terms, _resolve_loss_weights(config))
-    return {"total": total_loss, **loss_terms}
+    return torch.compile(
+        loss_step,
+        mode="reduce-overhead",
+        fullgraph=False,
+        dynamic=False,
+    )
 
 
 def _record_state(
@@ -369,28 +365,6 @@ def _record_state(
         torch.save(optimizer.state_dict(), lr_dir / checkpoint_name)
 
 
-def _call_interior_loss(
-    model: torch.nn.Module,
-    x_int: torch.Tensor,
-    int_weights: torch.Tensor | None,
-):
-    signature = inspect.signature(model.interior_loss)
-    positional_params = [
-        parameter
-        for parameter in signature.parameters.values()
-        if parameter.kind
-        in (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        )
-    ]
-
-    supports_weights = len(positional_params) >= 2
-    if supports_weights and int_weights is not None:
-        return model.interior_loss(x_int, int_weights)
-    return model.interior_loss(x_int)
-
-
 def _evaluate_test_metrics(
     model: torch.nn.Module, x_test: torch.Tensor, q_test: torch.Tensor
 ):
@@ -403,14 +377,18 @@ def _evaluate_test_metrics(
     return mae, l2re
 
 
-def _detach_loss_terms(loss_terms):
-    detached = {}
-    for name, value in loss_terms.items():
+def _detach_loss_values(loss_values):
+    detached = []
+    for value in loss_values:
         if isinstance(value, torch.Tensor):
-            detached[name] = value.detach()
+            detached.append(value.detach())
         else:
-            detached[name] = value
-    return detached
+            detached.append(value)
+    return tuple(detached)
+
+
+def _loss_values_to_terms(loss_values):
+    return dict(zip(_LOSS_TERM_NAMES, loss_values, strict=True))
 
 
 def _to_float(value):
@@ -420,26 +398,7 @@ def _to_float(value):
 
 
 def _prepare_batch_tensor(x: torch.Tensor):
-    x = x.detach()
-    if x.dtype != torch.float32:
-        x = x.to(torch.float32)
     return x.requires_grad_(True)
-
-
-def _resolve_loss_weights(config: ConfigDict):
-    if hasattr(config, "loss_weights"):
-        return {name: float(value) for name, value in dict(config.loss_weights).items()}
-
-    if hasattr(config, "ratio"):
-        ratio = list(config.ratio)
-        return {
-            "res_loss": float(ratio[0]),
-            "flux_loss": float(ratio[1]),
-            "u_ic": float(ratio[2]),
-            "u_bc": float(ratio[3]),
-        }
-
-    raise ValueError("TrainConfig must provide loss_weights or ratio")
 
 
 def _resolve_history_terms(config: ConfigDict, loss_terms: dict):
@@ -454,19 +413,6 @@ def _resolve_history_terms(config: ConfigDict, loss_terms: dict):
             "History terms {} not found in model outputs".format(missing_terms)
         )
     return history_terms
-
-
-def _sum_weighted_losses(loss_terms: dict, loss_weights: dict):
-    total = None
-    for name, weight in loss_weights.items():
-        if name not in loss_terms:
-            raise KeyError("Loss term {} not found in model outputs".format(name))
-        term = weight * loss_terms[name]
-        total = term if total is None else total + term
-
-    if total is None:
-        raise ValueError("No weighted loss terms were configured")
-    return total
 
 
 def _write_history_header(csv_path: Path, history_terms: list[str]):

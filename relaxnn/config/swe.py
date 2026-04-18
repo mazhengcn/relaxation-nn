@@ -28,6 +28,7 @@ def get_config() -> ConfigDict:
     config.TrainConfig = dict(
         epochs=600000,
         ratio=[0.1, 1.0, 1.0, 1.0],
+        int_weights=[1.0, 1.0, 1.0, 1.0],
         optimizer="Adam",
         lr=1e-3,
         decay="CosineAnnealing",

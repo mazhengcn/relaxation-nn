@@ -47,14 +47,15 @@ class SweNet(torch.nn.Module):
         h, u = self._split_state(self.forward(x))
         return h * u**2 + 0.5 * h**2
 
-    def interior_loss(self, x):
+    def interior_loss(self, x, weights=[1.0, 1.0, 1.0]):
         x = x.to(torch.float32)
         tt, xx = x.hsplit(2)
         q_t = vmap(jacrev(self.q, argnums=0), in_dims=(0, 0))(tt, xx)
         f_x = vmap(jacrev(self.f, argnums=1), in_dims=(0, 0))(tt, xx)
-        L_eq = self.loss_fn(q_t, -f_x)
+        L_eq1 = self.loss_fn(q_t[:, 0:1, :], -f_x[:, 0:1, :])
+        L_eq2 = self.loss_fn(q_t[:, 1:2, :], -f_x[:, 1:2, :])
         L_flux = self.loss_fn(self.flux(x), self.flux_true(x))
-        return L_eq, L_flux
+        return (weights[0] * L_eq1 + weights[1] * L_eq2, weights[2] * L_flux)
 
     def init_loss(self, x_ic):
         x_ic = x_ic.to(torch.float32)

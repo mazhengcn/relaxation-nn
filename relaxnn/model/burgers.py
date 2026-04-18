@@ -45,7 +45,8 @@ class BurgersNet(torch.nn.Module):
         u = self._u(x)
         return 0.5 * u**2
 
-    def interior_loss(self, x):
+    def interior_loss(self, x, weights=None):
+        del weights
         x = x.to(torch.float32)
         tt, xx = x.hsplit(2)
         q_t = vmap(jacrev(self.q, argnums=0), in_dims=(0, 0))(tt, xx)
@@ -90,17 +91,3 @@ class BurgersNet(torch.nn.Module):
 
     def F_bc(self, x):
         return 0.5 * self.q_bc(x) ** 2
-
-    def compute_loss_terms(self, x_int, x_ic, x_bc, int_weights=None):
-        del int_weights
-        res_loss, flux_loss = self.interior_loss(x_int)
-        u_ic_loss, F_ic_loss = self.init_loss(x_ic)
-        u_bc_loss, F_bc_loss = self.bc_loss(x_bc)
-        return {
-            "res_loss": res_loss,
-            "flux_loss": flux_loss,
-            "u_ic": u_ic_loss,
-            "F_ic": F_ic_loss,
-            "u_bc": u_bc_loss,
-            "F_bc": F_bc_loss,
-        }

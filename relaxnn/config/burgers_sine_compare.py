@@ -29,12 +29,8 @@ def get_config() -> ConfigDict:
     )
     config.TrainConfig = dict(
         epochs=30000,
-        loss_weights=dict(
-            res_loss=0.1,
-            flux_loss=2.0,
-            u_ic=10.0,
-            u_bc=10.0,
-        ),
+        ratio=[0.1, 2.0, 10.0, 10.0],
+        int_weights=[1.0, 1.0],
         history_terms=["res_loss", "flux_loss", "u_ic", "F_ic", "u_bc", "F_bc"],
         optimizer="LBFGS",
         lr=1.0,
