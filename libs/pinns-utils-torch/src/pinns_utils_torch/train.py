@@ -1,6 +1,5 @@
 import csv
 import inspect
-import time
 from pathlib import Path
 
 import numpy as np
@@ -32,16 +31,6 @@ def train(
 
     logging.info("Created the csv file")
     logging.info("----------Start training-----------")
-    start_time = time.time()
-
-    summary = {
-        "best_mae": float("inf"),
-        "best_l2re": float("inf"),
-        "best_mae_epoch": None,
-        "best_l2re_epoch": None,
-        "status": "running",
-        "optimizer": config.optimizer,
-    }
 
     optimization_schedule = _build_optimization_schedule(model, config)
     active_phase = _phase_for_epoch(optimization_schedule, 0)
@@ -68,12 +57,9 @@ def train(
         history_every=history_every,
         log_every=log_every,
         checkpoint_every=checkpoint_every,
-        is_final=False,
         history_terms=history_terms,
-        summary=summary,
     )
 
-    completed_normally = True
     for epoch in range(1, config.epochs + 1):
         active_phase = _phase_for_epoch(optimization_schedule, epoch)
         optimizer = active_phase["optimizer"]
@@ -112,29 +98,6 @@ def train(
         else:
             raise ValueError("other optimizer have not been implemented")
 
-        if not _all_finite(loss_terms):
-            logging.warning("Encountered non-finite loss terms at epoch %s", epoch)
-            completed_normally = False
-            summary["status"] = "nonfinite_loss"
-            _record_state(
-                epoch=epoch,
-                loss_terms=loss_terms,
-                model=model,
-                x_test=x_test,
-                q_test=q_test,
-                optimizer=optimizer,
-                csv_path=csv_path,
-                model_dir=model_dir,
-                lr_dir=lr_dir,
-                history_every=history_every,
-                log_every=log_every,
-                checkpoint_every=checkpoint_every,
-                is_final=True,
-                history_terms=history_terms,
-                summary=summary,
-            )
-            break
-
         _record_state(
             epoch=epoch,
             loss_terms=loss_terms,
@@ -148,18 +111,8 @@ def train(
             history_every=history_every,
             log_every=log_every,
             checkpoint_every=checkpoint_every,
-            is_final=epoch == config.epochs,
             history_terms=history_terms,
-            summary=summary,
         )
-
-    if completed_normally:
-        summary["status"] = "completed"
-    if not _model_parameters_are_finite(model):
-        summary["status"] = "nonfinite_parameters"
-    summary["elapsed_seconds"] = time.time() - start_time
-    summary["history_terms"] = history_terms
-    return summary
 
 
 def _build_optimization_schedule(model: torch.nn.Module, config: ConfigDict):
@@ -331,9 +284,9 @@ def _compute_loss_terms(
     int_weights: torch.Tensor,
     config: ConfigDict,
 ):
-    x_int = x_int.detach().clone().to(torch.float32).requires_grad_(True)
-    x_ic = x_ic.detach().clone().to(torch.float32).requires_grad_(True)
-    x_bc = x_bc.detach().clone().to(torch.float32).requires_grad_(True)
+    x_int = _prepare_batch_tensor(x_int)
+    x_ic = _prepare_batch_tensor(x_ic)
+    x_bc = _prepare_batch_tensor(x_bc)
 
     if hasattr(model, "compute_loss_terms"):
         loss_terms = model.compute_loss_terms(
@@ -376,24 +329,30 @@ def _record_state(
     history_every: int,
     log_every: int,
     checkpoint_every: int,
-    is_final: bool,
     history_terms: list[str],
-    summary: dict,
 ):
+    should_write_history = epoch % history_every == 0
+    should_log = epoch % log_every == 0
+    should_checkpoint = epoch % checkpoint_every == 0
+
+    if not (should_write_history or should_log or should_checkpoint):
+        return
+
     mae, l2re = _evaluate_test_metrics(model, x_test, q_test)
-    lr = optimizer.state_dict()["param_groups"][0]["lr"]
+
+    lr = optimizer.param_groups[0]["lr"]
 
     row = [epoch, _to_float(loss_terms["total"])]
     for name in history_terms:
         row.append(_to_float(loss_terms[name]))
     row.extend([_to_float(mae), _to_float(l2re), lr])
 
-    if epoch % history_every == 0 or is_final:
+    if should_write_history:
         with open(csv_path, "a+", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(row)
 
-    if epoch % log_every == 0 or is_final:
+    if should_log:
         loss_log = " | ".join(
             "{} : {}".format(name, _to_float(loss_terms[name]))
             for name in history_terms
@@ -409,26 +368,10 @@ def _record_state(
             )
         )
 
-    if epoch % checkpoint_every == 0 or is_final:
+    if should_checkpoint:
         checkpoint_name = "model_{:02d}".format(epoch)
         torch.save(model.state_dict(), model_dir / checkpoint_name)
         torch.save(optimizer.state_dict(), lr_dir / checkpoint_name)
-
-    mae_value = _to_float(mae)
-    l2re_value = _to_float(l2re)
-    if mae_value < summary["best_mae"]:
-        summary["best_mae"] = mae_value
-        summary["best_mae_epoch"] = epoch
-    if l2re_value < summary["best_l2re"]:
-        summary["best_l2re"] = l2re_value
-        summary["best_l2re_epoch"] = epoch
-    summary["final_epoch"] = epoch
-    summary["final_mae"] = mae_value
-    summary["final_l2re"] = l2re_value
-    summary["final_total_loss"] = _to_float(loss_terms["total"])
-    summary["final_loss_terms"] = {
-        name: _to_float(loss_terms[name]) for name in history_terms
-    }
 
 
 def _call_interior_loss(
@@ -456,7 +399,7 @@ def _call_interior_loss(
 def _evaluate_test_metrics(
     model: torch.nn.Module, x_test: torch.Tensor, q_test: torch.Tensor
 ):
-    with torch.no_grad():
+    with torch.inference_mode():
         q_pred = model(x_test)
     mae = torch.nn.L1Loss()(q_test, q_pred)
     error_norm = torch.linalg.vector_norm((q_pred - q_test).reshape(-1), ord=2)
@@ -479,6 +422,13 @@ def _to_float(value):
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().item()
     return float(value)
+
+
+def _prepare_batch_tensor(x: torch.Tensor):
+    x = x.detach()
+    if x.dtype != torch.float32:
+        x = x.to(torch.float32)
+    return x.requires_grad_(True)
 
 
 def _resolve_loss_weights(config: ConfigDict):
@@ -538,14 +488,3 @@ def _phase_for_epoch(schedule: list[dict], epoch: int):
         if phase["start_epoch"] <= epoch <= phase["end_epoch"]:
             return phase
     raise ValueError("No optimization phase configured for epoch {}".format(epoch))
-
-
-def _all_finite(loss_terms):
-    for value in loss_terms.values():
-        if isinstance(value, torch.Tensor) and not torch.isfinite(value).all():
-            return False
-    return True
-
-
-def _model_parameters_are_finite(model: torch.nn.Module):
-    return all(torch.isfinite(parameter).all() for parameter in model.parameters())

@@ -102,9 +102,9 @@ class EulerNet(torch.nn.Module):
         tt, xx = x.hsplit(2)
         q_t = vmap(jacrev(self.q, argnums=0), in_dims=(0, 0))(tt, xx)
         f_x = vmap(jacrev(self.f, argnums=1), in_dims=(0, 0))(tt, xx)
-        L_eq1 = self.loss_fn(q_t[:, :, 0:1], -f_x[:, :, 0:1])
-        L_eq2 = self.loss_fn(q_t[:, :, 1:2], -f_x[:, :, 1:2])
-        L_eq3 = self.loss_fn(q_t[:, :, 2:3], -f_x[:, :, 2:3])
+        L_eq1 = self.loss_fn(q_t[:, 0:1, :], -f_x[:, 0:1, :])
+        L_eq2 = self.loss_fn(q_t[:, 1:2, :], -f_x[:, 1:2, :])
+        L_eq3 = self.loss_fn(q_t[:, 2:3, :], -f_x[:, 2:3, :])
         flux = self.flux(x)
         flux_true = self.flux_true(x)
         L_flux = self.loss_fn(flux, flux_true)
@@ -127,23 +127,23 @@ class EulerNet(torch.nn.Module):
 
     def q_ic(self, x):
         if self.ibc_type[0] == "shock_tube":
-            xc = torch.tensor(0.0)
-            rho_l = torch.tensor(1.0)
-            rho_r = torch.tensor(0.125)
-            pressure_l = torch.tensor(1.0)
-            pressure_r = torch.tensor(0.1)
+            xc = 0.0
+            rho_l = 1.0
+            rho_r = 0.125
+            pressure_l = 1.0
+            pressure_r = 0.1
             rho = rho_l * (x[:, 1:2] <= xc) + rho_r * (x[:, 1:2] > xc)
             velocity = torch.zeros_like(rho)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
             return torch.cat((rho, velocity, pressure), dim=-1)
         elif self.ibc_type[0] == "lax_tube":
-            xc = torch.tensor(0.0)
-            rho_l = torch.tensor(0.445)
-            rho_r = torch.tensor(0.5)
-            u_l = torch.tensor(0.698)
-            u_r = torch.tensor(0.0)
-            pressure_l = torch.tensor(3.528)
-            pressure_r = torch.tensor(0.571)
+            xc = 0.0
+            rho_l = 0.445
+            rho_r = 0.5
+            u_l = 0.698
+            u_r = 0.0
+            pressure_l = 3.528
+            pressure_r = 0.571
             rho = rho_l * (x[:, 1:2] <= xc) + rho_r * (x[:, 1:2] > xc)
             velocity = u_l * (x[:, 1:2] <= xc) + u_r * (x[:, 1:2] > xc)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
@@ -151,9 +151,9 @@ class EulerNet(torch.nn.Module):
         elif self.ibc_type[0] == "blast":
             xl = -0.1
             xr = 0.1
-            pressure_l = torch.tensor(1.0)
-            pressure_m = torch.tensor(0.01)
-            pressure_r = torch.tensor(1.0)
+            pressure_l = 1.0
+            pressure_m = 0.01
+            pressure_r = 1.0
             pressure = (
                 pressure_l * (x[:, 1:2] <= xl)
                 + pressure_m * (x[:, 1:2] <= xr) * (x[:, 1:2] > xl)
@@ -167,23 +167,23 @@ class EulerNet(torch.nn.Module):
 
     def q_bc(self, x):
         if self.ibc_type[1] == "shock_tube":
-            xc = torch.tensor(0.0)
-            rho_l = torch.tensor(1.0)
-            rho_r = torch.tensor(0.125)
-            pressure_l = torch.tensor(1.0)
-            pressure_r = torch.tensor(0.1)
+            xc = 0.0
+            rho_l = 1.0
+            rho_r = 0.125
+            pressure_l = 1.0
+            pressure_r = 0.1
             rho = rho_l * (x[:, 1:2] <= xc) + rho_r * (x[:, 1:2] > xc)
             velocity = torch.zeros_like(rho)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
             return torch.cat((rho, velocity, pressure), dim=-1)
         elif self.ibc_type[1] == "lax_tube":
-            xc = torch.tensor(0.0)
-            rho_l = torch.tensor(0.445)
-            rho_r = torch.tensor(0.5)
-            u_l = torch.tensor(0.698)
-            u_r = torch.tensor(0.0)
-            pressure_l = torch.tensor(3.528)
-            pressure_r = torch.tensor(0.571)
+            xc = 0.0
+            rho_l = 0.445
+            rho_r = 0.5
+            u_l = 0.698
+            u_r = 0.0
+            pressure_l = 3.528
+            pressure_r = 0.571
             rho = rho_l * (x[:, 1:2] <= xc) + rho_r * (x[:, 1:2] > xc)
             velocity = u_l * (x[:, 1:2] <= xc) + u_r * (x[:, 1:2] > xc)
             pressure = pressure_l * (x[:, 1:2] <= xc) + pressure_r * (x[:, 1:2] > xc)
@@ -191,9 +191,9 @@ class EulerNet(torch.nn.Module):
         elif self.ibc_type[1] == "blast":
             xl = -0.1
             xr = 0.1
-            pressure_l = torch.tensor(1.0)
-            pressure_m = torch.tensor(0.01)
-            pressure_r = torch.tensor(1.0)
+            pressure_l = 1.0
+            pressure_m = 0.01
+            pressure_r = 1.0
             pressure = (
                 pressure_l * (x[:, 1:2] <= xl)
                 + pressure_m * (x[:, 1:2] <= xr) * (x[:, 1:2] > xl)

@@ -16,8 +16,8 @@ def get_config() -> ConfigDict:
     )
     config.NetConfig = dict(
         layer_sizes=[
-            [2, 64, 64, 64, 64, 1],
-            [2, 64, 64, 64, 64, 1],
+            [2, 64, 64, 64, 64, 64, 64, 1],
+            [2, 64, 64, 64, 64, 64, 64, 1],
         ],
         configuration=["DNN", "DNN"],
         activation=["tanh", "tanh"],
@@ -29,7 +29,7 @@ def get_config() -> ConfigDict:
     )
     config.TrainConfig = dict(
         epochs=600000,
-        ratio=[1.0, 1.0, 100.0, 0.0],
+        ratio=[1.0, 10.0, 100.0, 0.0],
         int_weights=[1.0, 0.5, 0.1, 1.0],
         optimizer="Adam",
         lr=1e-3,
