@@ -12,7 +12,7 @@ def get_config() -> ConfigDict:
     )
     config.NetConfig = dict(
         layer_sizes=[
-            [2, 64, 64, 64, 64, 2],
+            [2, 64, 64, 64, 64, 1],
             [2, 64, 64, 64, 64, 1],
         ],
         configuration=["DNN", "DNN"],

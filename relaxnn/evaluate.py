@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 
 if __package__ in (None, ""):
@@ -10,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from ml_collections import ConfigDict
-from relaxnn.model import burgers, euler_v1, euler_v2, euler_v3, swe_v1, swe_v2
+from relaxnn.model import basic, burgers, euler_v1, euler_v2, euler_v3, swe_v1, swe_v2
 from shared.path_utils import resolve_repo_path
 from shared.runtime import DEVICE
 
@@ -25,12 +26,39 @@ MODEL_DICT = {
 
 STATE_LABELS = {
     "burgers": ["u"],
-    "swe_v1": ["h", "M"],
+    "swe_v1": ["h", "u"],
     "swe_v2": ["h", "u"],
     "euler_v1": ["rho", "velocity", "pressure"],
     "euler_v2": ["rho", "velocity", "pressure"],
     "euler_v3": ["rho", "velocity", "pressure"],
 }
+
+
+class _LegacyRelaxationNet(torch.nn.Module):
+    def __init__(self, config: dict, state_output_dim: int, flux_output_dim: int):
+        super().__init__()
+        state_layer_sizes = list(config["layer_sizes"][0])
+        flux_layer_sizes = list(config["layer_sizes"][1])
+        state_layer_sizes[-1] = state_output_dim
+        flux_layer_sizes[-1] = flux_output_dim
+        self._state_net = basic.Net(
+            state_layer_sizes,
+            config["activation"][0],
+            config["configuration"][0],
+            config["initialization"][0],
+        )
+        self._flux_net = basic.Net(
+            flux_layer_sizes,
+            config["activation"][1],
+            config["configuration"][1],
+            config["initialization"][1],
+        )
+
+    def forward(self, x):
+        return self._state_net(x)
+
+    def flux(self, x):
+        return self._flux_net(x)
 
 
 def to_numpy(inputs):
@@ -89,11 +117,40 @@ def load_model(root_dir: Path, checkpoint_epoch: int | None = None):
     config = load_config(root_dir)
     model_dir = root_dir / "model_state_dict"
     epoch = resolve_checkpoint_epoch(model_dir, checkpoint_epoch)
-    model = MODEL_DICT[config["model"]](ConfigDict(config["NetConfig"])).to(DEVICE)
     model_path = model_dir / "model_{:02d}".format(epoch)
-    model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+    state_dict = torch.load(model_path, map_location=DEVICE)
+    model = MODEL_DICT[config["model"]](ConfigDict(config["NetConfig"])).to(DEVICE)
+    try:
+        model.load_state_dict(state_dict)
+    except RuntimeError:
+        model = _load_legacy_model(config, state_dict).to(DEVICE)
+        model.load_state_dict(state_dict)
     model.eval()
     return model, config, epoch
+
+
+def _infer_legacy_output_dim(state_dict: dict, prefix: str) -> int | None:
+    pattern = re.compile(r"^{}\.layers\.(\d+)\.weight$".format(re.escape(prefix)))
+    layer_ids = []
+    for key in state_dict:
+        match = pattern.match(key)
+        if match is not None:
+            layer_ids.append(int(match.group(1)))
+    if not layer_ids:
+        return None
+    final_key = "{}.layers.{}.weight".format(prefix, max(layer_ids))
+    return int(state_dict[final_key].shape[0])
+
+
+def _load_legacy_model(config: dict, state_dict: dict):
+    state_output_dim = _infer_legacy_output_dim(state_dict, "_state_net")
+    flux_output_dim = _infer_legacy_output_dim(state_dict, "_flux_net")
+    if state_output_dim is None or flux_output_dim is None:
+        raise RuntimeError(
+            "Checkpoint format is incompatible with current RelaxNN models and "
+            "does not match the supported legacy _state_net/_flux_net layout."
+        )
+    return _LegacyRelaxationNet(config["NetConfig"], state_output_dim, flux_output_dim)
 
 
 def select_time_slice(x_test, q_test, target_t: float):
@@ -260,14 +317,14 @@ def evaluate(mode, path: Path):
                 q_pred = to_numpy(q_pred)
                 flux_pred = to_numpy(flux_pred)
                 fig, (ax1, ax2) = plt.subplots(2, 1)
-                fig.suptitle("h and M of Clawpack")
+                fig.suptitle("h and u of Clawpack")
                 ax1.set_ylabel("h")
                 ax1.plot(x, q_part[:, 0:1], label="true")
                 ax1.plot(
                     x, q_pred[:, 0:1], "--o", label="pred", markevery=10, markersize=3
                 )
                 ax2.set_xlabel("x")
-                ax2.set_ylabel("M")
+                ax2.set_ylabel("u")
                 ax2.plot(x, q_part[:, 1:2], label="true")
                 ax2.plot(
                     x, q_pred[:, 1:2], "--o", label="pred", markevery=10, markersize=3

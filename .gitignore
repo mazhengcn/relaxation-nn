@@ -3,7 +3,8 @@
 *output*
 *.ipynb
 figures
-
+_figures
+*plot_family*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
