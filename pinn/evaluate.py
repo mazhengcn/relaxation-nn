@@ -13,6 +13,7 @@ import torch
 from ml_collections import ConfigDict
 
 from pinn.model import burgers, burgers_viscid, euler, swe
+from shared.path_utils import resolve_repo_path
 from shared.runtime import DEVICE
 
 MODEL_DICT = {
@@ -102,7 +103,7 @@ def _prepare_slice_data(
     checkpoint_epoch: int | None,
 ):
     model, config, epoch = load_model(root_dir, checkpoint_epoch)
-    testdata = np.load(config["DataConfig"]["testdata_path"])
+    testdata = np.load(resolve_repo_path(config["DataConfig"]["testdata_path"]))
     x_test, q_test = testdata[:, 0:2], testdata[:, 2 : testdata.shape[1]]
     actual_t, x_part, q_part = select_time_slice(x_test, q_test, target_t)
 

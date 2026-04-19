@@ -10,6 +10,7 @@ from pathlib import Path
 import torch
 
 from pinn.main import run_with_config
+from shared.path_utils import repo_relative_path, resolve_repo_path
 
 
 @dataclass(frozen=True)
@@ -126,7 +127,7 @@ def main():
     rows = []
     for variant in _selected_variants(args.stage, args.variants, args.seed_values):
         config = copy.deepcopy(get_config())
-        config.root_dir = str(root_dir)
+        config.root_dir = repo_relative_path(root_dir)
         config.timestamp = variant.name
         config.torch_seed = args.torch_seed
         config.TrainConfig.epochs = args.epochs
@@ -196,9 +197,9 @@ def _apply_sampling_seed_default(config):
 
 def _resolve_root_dir(stage: str, root_dir: str):
     if root_dir:
-        return Path(root_dir)
+        return resolve_repo_path(root_dir)
     timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    return Path("_output") / "pinn" / "burgers" / stage / timestamp
+    return resolve_repo_path(Path("_output") / "pinn" / "burgers" / stage / timestamp)
 
 
 def _selected_variants(stage: str, variants_arg: str, seed_values_arg: str):

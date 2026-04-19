@@ -1,14 +1,10 @@
-from pathlib import Path
-
 from ml_collections import ConfigDict
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path=str(_REPO_ROOT / "data" / "clawpack_data" / "burgers_sine.npy"),
+        testdata_path="data/clawpack_data/burgers_sine.npy",
         sampling_strategy="monte_carlo",
         range_L=[0.0, -1.0],
         range_R=[1.0, 1.0],

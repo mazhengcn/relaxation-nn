@@ -1,14 +1,10 @@
-from pathlib import Path
-
 from ml_collections import ConfigDict, config_dict
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path=str(_REPO_ROOT / "data" / "clawpack_data" / "swe_2shock.npy"),
+        testdata_path="data/clawpack_data/swe_2shock.npy",
         sampling_strategy="monte_carlo",
         lhs_criterion="center",
         sampling_seed=None,
@@ -48,7 +44,7 @@ def get_config() -> ConfigDict:
     config.plot_label = "PINN"
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
-    config.output_root = str(_REPO_ROOT / "_output" / "pinn" / "swe" / "2shock")
+    config.output_root = "_output/pinn/swe/2shock"
     config.experiment_name = ""
     config.root_dir = ""
     config.timestamp = ""

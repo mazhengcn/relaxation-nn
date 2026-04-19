@@ -11,6 +11,7 @@ from torch.distributions import constraints
 from torch.distributions.utils import broadcast_all
 
 from shared import cartesian
+from shared.path_utils import resolve_repo_path
 from shared.runtime import DEVICE
 
 
@@ -106,7 +107,7 @@ class LHSBoundarySampler:
 class Generator:
     def __init__(self, config: ConfigDict):
         self.config = config
-        self.load_path = config.testdata_path
+        self.load_path = resolve_repo_path(config.testdata_path)
         self.intbatch = config.num_samples[0]
         self.icbatch = config.num_samples[1]
         self.bcbatch = config.num_samples[2]

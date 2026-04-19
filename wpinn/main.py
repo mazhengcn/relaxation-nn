@@ -8,6 +8,7 @@ import torch
 from absl import app, flags, logging
 from ml_collections import config_flags
 from shared import generator
+from shared.path_utils import repo_relative_path, resolve_repo_path
 from shared.runtime import DEVICE
 from wpinn import train
 from wpinn.model import burgers
@@ -49,10 +50,10 @@ def _prepare_run_dirs(root_dir, timestamp):
 
 def _resolve_root_dir(config):
     if "root_dir" in config and config.root_dir:
-        return Path(config.root_dir)
+        return resolve_repo_path(config.root_dir)
 
     if "output_root" in config and config.output_root:
-        root_dir = Path(config.output_root)
+        root_dir = resolve_repo_path(config.output_root)
         if "experiment_name" in config and config.experiment_name:
             root_dir = root_dir / config.experiment_name
         return root_dir
@@ -76,8 +77,14 @@ def save_config(config, save_path):
 def run_with_config(config):
     torch.manual_seed(config.torch_seed)
     root_dir = _resolve_root_dir(config)
+    with config.DataConfig.unlocked():
+        config.DataConfig.testdata_path = repo_relative_path(
+            config.DataConfig.testdata_path
+        )
     with config.unlocked():
-        config.root_dir = str(root_dir)
+        if "output_root" in config and config.output_root:
+            config.output_root = repo_relative_path(config.output_root)
+        config.root_dir = repo_relative_path(root_dir)
 
     time_dir, csv_path, model_dir, lr_dir = _prepare_run_dirs(
         root_dir, config.timestamp

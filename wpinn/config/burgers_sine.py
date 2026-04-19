@@ -1,14 +1,10 @@
-from pathlib import Path
-
 from ml_collections import ConfigDict, config_dict
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path=str(_REPO_ROOT / "data" / "clawpack_data" / "burgers_sine.npy"),
+        testdata_path="data/clawpack_data/burgers_sine.npy",
         sampling_strategy="monte_carlo",
         range_L=[0.0, -1.0],
         range_R=[1.0, 1.0],
@@ -65,7 +61,7 @@ def get_config() -> ConfigDict:
     config.plot_label = "WPINN"
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
-    config.output_root = str(_REPO_ROOT / "_output" / "wpinn" / "burgers" / "sine")
+    config.output_root = "_output/wpinn/burgers/sine"
     config.experiment_name = (
         "adam_cosine_20000_mc_4096_512_512_partial_h1_w10_entropy101_sol64_test32"
     )

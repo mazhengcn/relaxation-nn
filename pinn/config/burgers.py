@@ -1,16 +1,10 @@
-from pathlib import Path
-
 from ml_collections import ConfigDict, config_dict
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path=str(
-            _REPO_ROOT / "data" / "clawpack_data" / "burgers_riemann.npy"
-        ),
+        testdata_path="data/clawpack_data/burgers_riemann.npy",
         sampling_strategy="monte_carlo",
         lhs_criterion="center",
         sampling_seed=None,
@@ -50,7 +44,7 @@ def get_config() -> ConfigDict:
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
     # By default, runs are saved to output_root/experiment_name/timestamp.
-    config.output_root = str(_REPO_ROOT / "_output" / "pinn" / "burgers" / "riemann")
+    config.output_root = "_output/pinn/burgers/riemann"
     config.experiment_name = (
         "adam_cosine_eta1e6_300000_mc_10000_1000_1000_tanh_xavier_uniform_w1_10_10_n64"
     )
