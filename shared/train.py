@@ -31,7 +31,6 @@ def train(
     int_weights = torch.tensor(config.int_weights, dtype=torch.float32).to(device)
     history_every = getattr(config, "history_every", 1000)
     log_every = getattr(config, "log_every", 1000)
-    checkpoint_every = getattr(config, "checkpoint_every", 1000)
 
     x_test = torch.tensor(x_test, dtype=torch.float32).to(device)
     q_test = torch.tensor(q_test, dtype=torch.float32).to(device)
@@ -49,6 +48,7 @@ def train(
     _write_history_header(csv_path, history_terms)
     _record_state(
         epoch=0,
+        total_epochs=config.epochs,
         loss_terms=initial_terms,
         model=model,
         x_test=x_test,
@@ -59,7 +59,6 @@ def train(
         lr_dir=lr_dir,
         history_every=history_every,
         log_every=log_every,
-        checkpoint_every=checkpoint_every,
         history_terms=history_terms,
     )
 
@@ -94,6 +93,7 @@ def train(
 
         _record_state(
             epoch=epoch,
+            total_epochs=config.epochs,
             loss_terms=loss_terms,
             model=model,
             x_test=x_test,
@@ -104,7 +104,6 @@ def train(
             lr_dir=lr_dir,
             history_every=history_every,
             log_every=log_every,
-            checkpoint_every=checkpoint_every,
             history_terms=history_terms,
         )
 
@@ -310,6 +309,7 @@ def _build_loss_step(
 
 def _record_state(
     epoch: int,
+    total_epochs: int,
     loss_terms,
     model: torch.nn.Module,
     x_test: torch.Tensor,
@@ -320,12 +320,11 @@ def _record_state(
     lr_dir: Path,
     history_every: int,
     log_every: int,
-    checkpoint_every: int,
     history_terms: list[str],
 ):
     should_write_history = epoch % history_every == 0
     should_log = epoch % log_every == 0
-    should_checkpoint = epoch % checkpoint_every == 0
+    should_checkpoint = epoch == total_epochs
 
     if not (should_write_history or should_log or should_checkpoint):
         return
