@@ -298,13 +298,28 @@ def _apply_sampling_variant(config, variant_name: str):
 
 def _apply_loss_weight_variant(config, variant_name: str):
     mapping = {
-        "w1_1_1": dict(res_loss=1.0, u_ic=1.0, u_bc=1.0),
-        "w1_5_5": dict(res_loss=1.0, u_ic=5.0, u_bc=5.0),
-        "w1_10_10": dict(res_loss=1.0, u_ic=10.0, u_bc=10.0),
+        "w1_1_1": (1.0, 1.0),
+        "w1_5_5": (5.0, 5.0),
+        "w1_10_10": (10.0, 10.0),
     }
     if variant_name not in mapping:
         raise ValueError("Unknown loss-weight variant {}".format(variant_name))
-    config.TrainConfig.loss_weights = mapping[variant_name]
+    if "ratio" in config.TrainConfig:
+        res_weight = config.TrainConfig.ratio[0]
+        flux_weight = config.TrainConfig.ratio[1]
+        u_ic_weight, u_bc_weight = mapping[variant_name]
+        config.TrainConfig.ratio = [
+            res_weight,
+            flux_weight,
+            u_ic_weight,
+            u_bc_weight,
+        ]
+    else:
+        config.TrainConfig.loss_weights = dict(
+            res_loss=1.0,
+            u_ic=mapping[variant_name][0],
+            u_bc=mapping[variant_name][1],
+        )
 
 
 def _run_variant(config, variant, stage: str):
@@ -331,7 +346,7 @@ def _run_variant(config, variant, stage: str):
         "num_interior": config.DataConfig.num_samples[0],
         "num_initial": config.DataConfig.num_samples[1],
         "num_boundary": config.DataConfig.num_samples[2],
-        "loss_weights": _dict_to_compact_string(config.TrainConfig.loss_weights),
+        "loss_weights": _loss_weight_summary(config.TrainConfig),
         "torch_seed": config.torch_seed,
         "status": status,
         "run_dir": str(run_dir),
@@ -381,6 +396,12 @@ def _write_stage_summary(csv_path: Path, rows: list[dict]):
 
 def _dict_to_compact_string(values):
     return ";".join("{}={}".format(key, value) for key, value in dict(values).items())
+
+
+def _loss_weight_summary(train_config):
+    if "ratio" in train_config:
+        return ",".join(str(value) for value in train_config.ratio)
+    return _dict_to_compact_string(train_config.loss_weights)
 
 
 def _prune_unused_train_config_fields(config, adam_epochs: int):

@@ -79,7 +79,7 @@ class SweNet(torch.nn.Module):
         return L_eq, L_flux
 
     def q_ic(self, x):
-        if self.ibc_type[0] == "dam-break":
+        if self.ibc_type[0] == "dam_break":
             xc = torch.tensor(0.0)
             h_l = torch.tensor(1.0)
             h_r = torch.tensor(0.5)
@@ -97,7 +97,7 @@ class SweNet(torch.nn.Module):
             raise ValueError("other ibc type have not been implemented")
 
     def q_bc(self, x):
-        if self.ibc_type[1] == "dam-break":
+        if self.ibc_type[1] == "dam_break":
             xc = torch.tensor(0.0)
             h_l = torch.tensor(1.0)
             h_r = torch.tensor(0.5)

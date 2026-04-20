@@ -171,7 +171,7 @@ def _compute_true_flux(mode: str, q_true: np.ndarray, config: dict):
         return 0.5 * q_true**2, ["f"]
 
     if mode == "swe":
-        gravity = float(config["NetConfig"].get("gravity", 1.0))
+        gravity = 1.0
         height = q_true[:, 0:1]
         velocity = q_true[:, 1:2]
         flux = np.concatenate(
@@ -184,7 +184,7 @@ def _compute_true_flux(mode: str, q_true: np.ndarray, config: dict):
         return flux, ["hu", "hu^2 + gh^2/2"]
 
     if mode == "euler":
-        gamma = float(config["NetConfig"].get("gamma", 1.4))
+        gamma = 1.4
         rho = q_true[:, 0:1]
         velocity = q_true[:, 1:2]
         pressure = q_true[:, 2:3]
