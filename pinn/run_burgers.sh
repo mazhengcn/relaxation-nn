@@ -5,6 +5,7 @@ set -euo pipefail
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-python}"
 CONFIG_PATH="${CONFIG_PATH:-${SCRIPT_DIR}/config/burgers.py}"
 RUN_ID="${RUN_ID:-$(date +"%Y-%m-%dT%H-%M-%S")}"
 TORCH_SEED="${TORCH_SEED:-1}"
