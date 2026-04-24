@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from ml_collections import ConfigDict
 from smt.sampling_methods import LHS
+from torch.quasirandom import SobolEngine
 from torch import nan
 from torch.distributions import constraints
 from torch.distributions.utils import broadcast_all
@@ -86,6 +87,24 @@ class LHSSampler:
         return torch.tensor(samples, dtype=torch.float32, device=DEVICE)
 
 
+class SobolSampler:
+    def __init__(self, low, high, scramble=False, seed=None, skip=0):
+        self.low = low.to(device=DEVICE, dtype=torch.float32)
+        self.high = high.to(device=DEVICE, dtype=torch.float32)
+        self.engine = SobolEngine(
+            dimension=int(self.low.numel()),
+            scramble=bool(scramble),
+            seed=seed if scramble else None,
+        )
+        if skip:
+            self.engine.fast_forward(int(skip))
+
+    def rsample(self, sample_shape=torch.Size()):
+        num_samples = sample_shape[0]
+        samples = self.engine.draw(num_samples).to(device=DEVICE, dtype=torch.float32)
+        return self.low + samples * (self.high - self.low)
+
+
 class LHSBoundarySampler:
     def __init__(self, low, high, criterion, seed=None):
         self.xrange = torch.tensor(
@@ -104,6 +123,58 @@ class LHSBoundarySampler:
         return cartesian.cartesian_prod(t, self.xrange).reshape(-1, 2)
 
 
+class SobolBoundarySampler:
+    def __init__(self, low, high, scramble=False, seed=None, skip=0):
+        self.xrange = torch.tensor(
+            [[low[1]], [high[1]]], dtype=torch.float32, device=DEVICE
+        )
+        self.low = torch.tensor([low[0]], dtype=torch.float32, device=DEVICE)
+        self.high = torch.tensor([high[0]], dtype=torch.float32, device=DEVICE)
+        self.engine = SobolEngine(
+            dimension=1,
+            scramble=bool(scramble),
+            seed=seed if scramble else None,
+        )
+        if skip:
+            self.engine.fast_forward(int(skip))
+
+    def rsample(self, sample_shape=torch.Size()):
+        total_samples = sample_shape[0]
+        if total_samples % 2 != 0:
+            raise ValueError("Boundary batch size must be even")
+
+        unit = self.engine.draw(total_samples // 2).to(device=DEVICE, dtype=torch.float32)
+        t = self.low + unit * (self.high - self.low)
+        return cartesian.cartesian_prod(t, self.xrange).reshape(-1, 2)
+
+
+class SobolBoundaryOverwriteSampler:
+    def __init__(self, low, high, scramble=False, seed=None, skip=0):
+        self.low = low.to(device=DEVICE, dtype=torch.float32)
+        self.high = high.to(device=DEVICE, dtype=torch.float32)
+        self.engine = SobolEngine(
+            dimension=int(self.low.numel()),
+            scramble=bool(scramble),
+            seed=seed if scramble else None,
+        )
+        if skip:
+            self.engine.fast_forward(int(skip))
+
+    def rsample(self, sample_shape=torch.Size()):
+        total_samples = sample_shape[0]
+        if total_samples % 2 != 0:
+            raise ValueError("Boundary batch size must be even")
+
+        per_side = total_samples // 2
+        unit = self.engine.draw(per_side).to(device=DEVICE, dtype=torch.float32)
+        samples = self.low + unit * (self.high - self.low)
+        left = samples.clone()
+        right = samples.clone()
+        left[:, 1] = self.low[1]
+        right[:, 1] = self.high[1]
+        return torch.cat([left, right], dim=0)
+
+
 class Generator:
     def __init__(self, config: ConfigDict):
         self.config = config
@@ -118,6 +189,12 @@ class Generator:
         self.sampling_strategy = getattr(config, "sampling_strategy", "monte_carlo")
         self.lhs_criterion = getattr(config, "lhs_criterion", None)
         self.sampling_seed = getattr(config, "sampling_seed", None)
+        self.sobol_scramble = bool(getattr(config, "sobol_scramble", False))
+        self.sobol_split_streams = bool(getattr(config, "sobol_split_streams", True))
+        self.sobol_boundary_mode = str(
+            getattr(config, "sobol_boundary_mode", "cartesian")
+        ).strip().lower()
+        self.reuse_samples = bool(getattr(config, "reuse_samples", False))
         self.eval_time_window = tuple(getattr(config, "eval_time_window", ()))
         self.interior_grid_shape = tuple(getattr(config, "interior_grid_shape", ()))
         self._fixed_samples = None
@@ -126,11 +203,16 @@ class Generator:
         self.intsampler, self.icsampler, self.bcsampler = self._build_samplers()
         if self.sampling_strategy == "fixed_grid":
             self._fixed_samples = self._build_fixed_samples()
+        elif self.reuse_samples:
+            self._fixed_samples = self._draw_samples()
 
     def samples(self):
-        if self.sampling_strategy == "fixed_grid":
+        if self._fixed_samples is not None:
             return tuple(samples.clone().detach() for samples in self._fixed_samples)
 
+        return self._draw_samples()
+
+    def _draw_samples(self):
         intsamples = self.intsampler.rsample((self.intbatch,))
         icsamples = self.icsampler.rsample((self.icbatch,))
         bcsamples = self.bcsampler.rsample((self.bcbatch,))
@@ -177,6 +259,56 @@ class Generator:
                 ),
             )
 
+        if self.sampling_strategy == "sobol":
+            interior_seed, initial_seed, boundary_seed = self._spawn_sobol_generators()
+            base_skip = 0 if self.sampling_seed is None else int(self.sampling_seed)
+            if not self.sobol_split_streams:
+                initial_skip = base_skip
+                boundary_skip = base_skip
+            else:
+                initial_skip = base_skip + self.intbatch
+                boundary_skip = base_skip + self.intbatch + self.icbatch
+
+            if self.sobol_boundary_mode == "legacy_overwrite":
+                boundary_sampler = SobolBoundaryOverwriteSampler(
+                    self.intlow,
+                    self.inthigh,
+                    scramble=self.sobol_scramble,
+                    seed=boundary_seed,
+                    skip=boundary_skip,
+                )
+            elif self.sobol_boundary_mode == "cartesian":
+                boundary_sampler = SobolBoundarySampler(
+                    self.intlow,
+                    self.inthigh,
+                    scramble=self.sobol_scramble,
+                    seed=boundary_seed,
+                    skip=boundary_skip,
+                )
+            else:
+                raise ValueError(
+                    "Unsupported sobol_boundary_mode {}".format(
+                        self.sobol_boundary_mode
+                    )
+                )
+            return (
+                SobolSampler(
+                    self.intlow,
+                    self.inthigh,
+                    scramble=self.sobol_scramble,
+                    seed=interior_seed,
+                    skip=base_skip,
+                ),
+                SobolSampler(
+                    self.iclow,
+                    self.ichigh,
+                    scramble=self.sobol_scramble,
+                    seed=initial_seed,
+                    skip=initial_skip,
+                ),
+                boundary_sampler,
+            )
+
         if self.sampling_strategy == "fixed_grid":
             return (
                 Uniform(self.intlow, self.inthigh),
@@ -216,6 +348,18 @@ class Generator:
         child_sequences = seed_sequence.spawn(3)
         return [np.random.default_rng(child) for child in child_sequences]
 
+    def _spawn_sobol_generators(self):
+        if not self.sobol_scramble:
+            return None, None, None
+        if self.sampling_seed is None:
+            return None, None, None
+
+        seed_sequence = np.random.SeedSequence(int(self.sampling_seed))
+        child_sequences = seed_sequence.spawn(3)
+        return [
+            int(child.generate_state(1, dtype=np.uint32)[0]) for child in child_sequences
+        ]
+
     def _validate_boundary_batch_size(self):
         if self.bcbatch % 2 != 0:
             raise ValueError("Boundary batch size must be even")
@@ -245,11 +389,9 @@ class Generator:
 
     @staticmethod
     def _validate_sampling_strategy(strategy, name):
-        if strategy not in {"monte_carlo", "lhs", "fixed_grid"}:
+        if strategy not in {"monte_carlo", "lhs", "sobol", "fixed_grid"}:
             raise ValueError(
-                "Unknown {} {}, expected 'monte_carlo', 'lhs', or 'fixed_grid'".format(
-                    name, strategy
-                )
+                "Unknown {} {}, expected 'monte_carlo', 'lhs', 'sobol', or 'fixed_grid'".format(name, strategy)
             )
 
     def load_testdata(self):

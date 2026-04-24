@@ -1,4 +1,5 @@
 import csv
+import json
 import time
 from pathlib import Path
 
@@ -17,13 +18,24 @@ def train(
     csv_path: Path,
     model_dir: Path,
     lr_dir: Path,
+    start_epoch: int = 0,
+    optimizer_state: dict | None = None,
 ):
     history_every = int(getattr(config, "history_every", 100))
     log_every = int(getattr(config, "log_every", 100))
     checkpoint_every = int(getattr(config, "checkpoint_every", 1000))
+    defer_best_total_checkpoint = bool(
+        getattr(config, "defer_best_total_checkpoint", False)
+    )
     maximize_steps = int(getattr(config, "maximize_steps", 1))
     minimize_steps = int(getattr(config, "minimize_steps", 1))
     test_reset_every = int(getattr(config, "test_reset_every", 0))
+    test_reset_frequency = float(getattr(config, "test_reset_frequency", 0.0))
+    reset_test_optimizer_state = bool(
+        getattr(config, "reset_test_optimizer_state", True)
+    )
+    if test_reset_every <= 0 and test_reset_frequency > 0.0:
+        test_reset_every = max(1, int(round(test_reset_frequency * int(config.epochs))))
 
     x_test = torch.tensor(x_test, dtype=torch.float32, device=device)
     q_test = torch.tensor(q_test, dtype=torch.float32, device=device)
@@ -43,13 +55,38 @@ def train(
         getattr(config, "solution_decay", "CosineAnnealing"),
         total_epochs=int(config.epochs),
         eta_min=float(getattr(config, "solution_cosine_eta_min", 0.0)),
+        t_max=getattr(config, "solution_cosine_t_max", None),
     )
     test_scheduler = _build_scheduler(
         test_optimizer,
         getattr(config, "test_decay", "CosineAnnealing"),
         total_epochs=int(config.epochs),
         eta_min=float(getattr(config, "test_cosine_eta_min", 0.0)),
+        t_max=getattr(config, "test_cosine_t_max", None),
     )
+
+    if optimizer_state:
+        solution_state = optimizer_state.get("solution_optimizer")
+        test_state = optimizer_state.get("test_optimizer")
+        solution_scheduler_state = optimizer_state.get("solution_scheduler")
+        test_scheduler_state = optimizer_state.get("test_scheduler")
+        if solution_state is not None:
+            solution_optimizer.load_state_dict(solution_state)
+        if test_state is not None:
+            test_optimizer.load_state_dict(test_state)
+        if solution_scheduler is not None and solution_scheduler_state is not None:
+            solution_scheduler.load_state_dict(solution_scheduler_state)
+        if test_scheduler is not None and test_scheduler_state is not None:
+            test_scheduler.load_state_dict(test_scheduler_state)
+
+        resume_solution_lr = getattr(config, "resume_solution_lr", None)
+        resume_test_lr = getattr(config, "resume_test_lr", None)
+        if resume_solution_lr not in (None, 0):
+            for group in solution_optimizer.param_groups:
+                group["lr"] = float(resume_solution_lr)
+        if resume_test_lr not in (None, 0):
+            for group in test_optimizer.param_groups:
+                group["lr"] = float(resume_test_lr)
 
     logging.info("Created the csv file")
     logging.info("----------Start adversarial training-----------")
@@ -59,6 +96,7 @@ def train(
         "data_loss",
         "res_loss",
         "res_raw",
+        "res_raw_after_max",
         "u_ic",
         "u_bc",
         "test_norm",
@@ -69,11 +107,19 @@ def train(
     _write_history_header(csv_path, history_terms)
 
     summary = {
+        "best_total": float("inf"),
+        "best_total_epoch": None,
         "best_mae": float("inf"),
+        "best_l1re": float("inf"),
         "best_l2re": float("inf"),
         "best_mae_epoch": None,
+        "best_l1re_epoch": None,
         "best_l2re_epoch": None,
         "status": "running",
+    }
+    checkpoint_cache = {
+        "best_total_state": None,
+        "best_total_meta": None,
     }
 
     initial_batch = _prepare_batch(datagenerator.samples(), device)
@@ -84,7 +130,7 @@ def train(
         q_test=q_test,
         solution_optimizer=solution_optimizer,
         test_optimizer=test_optimizer,
-        epoch=0,
+        epoch=int(start_epoch),
     )
     _record_state(
         metrics=initial_metrics,
@@ -102,23 +148,28 @@ def train(
         is_final=False,
         history_terms=history_terms,
         summary=summary,
+        defer_best_total_checkpoint=defer_best_total_checkpoint,
+        checkpoint_cache=checkpoint_cache,
     )
 
     completed_normally = True
-    for epoch in range(1, int(config.epochs) + 1):
+    for epoch in range(int(start_epoch) + 1, int(config.epochs) + 1):
         if test_reset_every > 0 and epoch % test_reset_every == 0:
             model.reset_test_network()
-            test_optimizer.state.clear()
+            if reset_test_optimizer_state:
+                test_optimizer.state.clear()
 
         batch = _prepare_batch(datagenerator.samples(), device)
         min_terms = None
         max_terms = None
+        res_raw_after_max = 0.0
 
         for _ in range(maximize_steps):
             test_optimizer.zero_grad()
             max_terms = model.compute_max_loss_terms(
                 x_int=batch[0].detach().clone().requires_grad_(True)
             )
+            res_raw_after_max += _to_float(max_terms["res_raw"])
             max_terms["total"].backward()
             test_optimizer.step()
 
@@ -141,6 +192,7 @@ def train(
             epoch=epoch,
             min_terms=min_terms,
             max_terms=max_terms,
+            res_raw_after_max=res_raw_after_max,
             x_test=x_test,
             q_test=q_test,
             model=model,
@@ -168,6 +220,8 @@ def train(
                 is_final=True,
                 history_terms=history_terms,
                 summary=summary,
+                defer_best_total_checkpoint=defer_best_total_checkpoint,
+                checkpoint_cache=checkpoint_cache,
             )
             break
 
@@ -187,10 +241,16 @@ def train(
             is_final=epoch == int(config.epochs),
             history_terms=history_terms,
             summary=summary,
+            defer_best_total_checkpoint=defer_best_total_checkpoint,
+            checkpoint_cache=checkpoint_cache,
         )
 
     if completed_normally:
         summary["status"] = "completed"
+    if checkpoint_cache["best_total_state"] is not None:
+        torch.save(checkpoint_cache["best_total_state"], model_dir / "model_best_total")
+        with open(model_dir / "model_best_total_meta.json", "w", encoding="utf-8") as f:
+            json.dump(checkpoint_cache["best_total_meta"], f, indent=2)
     summary["elapsed_seconds"] = time.time() - start_time
     return summary
 
@@ -217,6 +277,7 @@ def _evaluate_epoch(
         epoch=epoch,
         min_terms=min_terms,
         max_terms=max_terms,
+        res_raw_after_max=_to_float(max_terms["res_raw"]),
         x_test=x_test,
         q_test=q_test,
         model=model,
@@ -229,19 +290,21 @@ def _merge_metrics(
     epoch,
     min_terms,
     max_terms,
+    res_raw_after_max,
     x_test,
     q_test,
     model,
     solution_optimizer,
     test_optimizer,
 ):
-    mae, l2re = _evaluate_test_metrics(model, x_test, q_test)
+    mae, l1re, l2re = _evaluate_test_metrics(model, x_test, q_test)
     return {
         "epoch": epoch,
         "total": min_terms["total"].detach(),
         "data_loss": min_terms["data_loss"].detach(),
         "res_loss": min_terms["res_loss"].detach(),
         "res_raw": min_terms["res_raw"].detach(),
+        "res_raw_after_max": float(res_raw_after_max),
         "u_ic": min_terms["u_ic"].detach(),
         "u_bc": min_terms["u_bc"].detach(),
         "test_norm": min_terms["test_norm"].detach(),
@@ -249,20 +312,27 @@ def _merge_metrics(
         "test_reg": min_terms["test_reg"].detach(),
         "max_loss": max_terms["max_loss"].detach(),
         "mae": mae.detach(),
+        "l1re": l1re.detach(),
         "l2re": l2re.detach(),
         "solution_lr": solution_optimizer.param_groups[0]["lr"],
         "test_lr": test_optimizer.param_groups[0]["lr"],
     }
 
 
-def _build_scheduler(optimizer, decay, total_epochs, eta_min):
+def _build_scheduler(optimizer, decay, total_epochs, eta_min, t_max=None):
     decay_name = str(decay).strip().lower()
     if decay_name in {"none", "constant"}:
         return None
+    if decay_name in {"inversetime", "inverse_time", "lambda"}:
+        total_epochs = max(1, int(total_epochs))
+        return torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda epoch: 1.0 / (1.0 + (float(epoch) / float(total_epochs))),
+        )
     if decay_name in {"cosine", "cosineannealing", "cosine_annealing"}:
         return torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=max(1, int(total_epochs)),
+            T_max=max(1, int(total_epochs if t_max in (None, 0) else t_max)),
             eta_min=float(eta_min),
         )
     raise ValueError("Unsupported decay {}".format(decay))
@@ -278,7 +348,16 @@ def _write_history_header(csv_path: Path, history_terms: list[str]):
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
-            ["epoch", "total", *history_terms, "MAE", "L2RE", "solution_lr", "test_lr"]
+            [
+                "epoch",
+                "total",
+                *history_terms,
+                "MAE",
+                "L1RE",
+                "L2RE",
+                "solution_lr",
+                "test_lr",
+            ]
         )
 
 
@@ -298,6 +377,8 @@ def _record_state(
     is_final,
     history_terms,
     summary,
+    defer_best_total_checkpoint,
+    checkpoint_cache,
 ):
     epoch = int(metrics["epoch"])
     row = [epoch, _to_float(metrics["total"])]
@@ -306,6 +387,7 @@ def _record_state(
     row.extend(
         [
             _to_float(metrics["mae"]),
+            _to_float(metrics["l1re"]),
             _to_float(metrics["l2re"]),
             float(metrics["solution_lr"]),
             float(metrics["test_lr"]),
@@ -320,7 +402,7 @@ def _record_state(
     if epoch % log_every == 0 or is_final:
         logging.info(
             "epoch : %s | total : %s | data_loss : %s | res_loss : %s | "
-            "res_raw : %s | max_loss : %s | MAE : %s | L2RE : %s | "
+            "res_raw : %s | max_loss : %s | MAE : %s | L1RE : %s | L2RE : %s | "
             "sol_lr : %s | test_lr : %s",
             epoch,
             _to_float(metrics["total"]),
@@ -329,6 +411,7 @@ def _record_state(
             _to_float(metrics["res_raw"]),
             _to_float(metrics["max_loss"]),
             _to_float(metrics["mae"]),
+            _to_float(metrics["l1re"]),
             _to_float(metrics["l2re"]),
             float(metrics["solution_lr"]),
             float(metrics["test_lr"]),
@@ -353,28 +436,70 @@ def _record_state(
             lr_dir / checkpoint_name,
         )
 
+    total_value = _to_float(metrics["total"])
     mae_value = _to_float(metrics["mae"])
+    l1re_value = _to_float(metrics["l1re"])
     l2re_value = _to_float(metrics["l2re"])
+    if total_value < summary["best_total"]:
+        summary["best_total"] = total_value
+        summary["best_total_epoch"] = epoch
+        summary["best_total_data_loss"] = _to_float(metrics["data_loss"])
+        summary["best_total_res_loss"] = _to_float(metrics["res_loss"])
+        summary["best_total_res_raw"] = _to_float(metrics["res_raw"])
+        summary["best_total_res_raw_after_max"] = _to_float(
+            metrics["res_raw_after_max"]
+        )
+        summary["best_total_mae"] = mae_value
+        summary["best_total_l1re"] = l1re_value
+        summary["best_total_l2re"] = l2re_value
+        best_meta = {
+            "epoch": epoch,
+            "total": total_value,
+            "data_loss": summary["best_total_data_loss"],
+            "res_loss": summary["best_total_res_loss"],
+            "res_raw": summary["best_total_res_raw"],
+            "res_raw_after_max": summary["best_total_res_raw_after_max"],
+            "mae": summary["best_total_mae"],
+            "l1re": summary["best_total_l1re"],
+            "l2re": summary["best_total_l2re"],
+        }
+        if defer_best_total_checkpoint:
+            checkpoint_cache["best_total_state"] = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
+            checkpoint_cache["best_total_meta"] = best_meta
+        else:
+            torch.save(model.state_dict(), model_dir / "model_best_total")
+            with open(model_dir / "model_best_total_meta.json", "w", encoding="utf-8") as f:
+                json.dump(best_meta, f, indent=2)
+
     if mae_value < summary["best_mae"]:
         summary["best_mae"] = mae_value
         summary["best_mae_epoch"] = epoch
+    if l1re_value < summary["best_l1re"]:
+        summary["best_l1re"] = l1re_value
+        summary["best_l1re_epoch"] = epoch
     if l2re_value < summary["best_l2re"]:
         summary["best_l2re"] = l2re_value
         summary["best_l2re_epoch"] = epoch
     summary["final_epoch"] = epoch
     summary["final_mae"] = mae_value
+    summary["final_l1re"] = l1re_value
     summary["final_l2re"] = l2re_value
-    summary["final_total_loss"] = _to_float(metrics["total"])
+    summary["final_total_loss"] = total_value
 
 
 def _evaluate_test_metrics(model, x_test, q_test):
     with torch.no_grad():
         q_pred = model(x_test)
     mae = torch.nn.L1Loss()(q_test, q_pred)
+    reference_l1 = torch.mean(torch.abs(q_test)).clamp_min(torch.finfo(q_test.dtype).eps)
+    l1re = mae / reference_l1
     error_norm = torch.linalg.vector_norm((q_pred - q_test).reshape(-1), ord=2)
     reference_norm = torch.linalg.vector_norm(q_test.reshape(-1), ord=2)
     l2re = error_norm / reference_norm
-    return mae, l2re
+    return mae, l1re, l2re
 
 
 def _all_finite(metrics: dict):

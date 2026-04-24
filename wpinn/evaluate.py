@@ -55,8 +55,20 @@ def resolve_checkpoint_epoch(model_dir: Path, checkpoint_epoch: int | None = Non
 def load_model(root_dir: Path, checkpoint_epoch: int | None = None):
     config = load_config(root_dir)
     model_dir = root_dir / "model_state_dict"
-    epoch = resolve_checkpoint_epoch(model_dir, checkpoint_epoch)
     model = MODEL_DICT[config["model"]](ConfigDict(config["NetConfig"])).to(DEVICE)
+    if checkpoint_epoch == "best_total":
+        model_path = model_dir / "model_best_total"
+        meta_path = model_dir / "model_best_total_meta.json"
+        if model_path.exists() and meta_path.exists():
+            with open(meta_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+            epoch = int(metadata["epoch"])
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+            model.eval()
+            return model, config, epoch
+        checkpoint_epoch = None
+
+    epoch = resolve_checkpoint_epoch(model_dir, checkpoint_epoch)
     model_path = model_dir / "model_{:02d}".format(epoch)
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.eval()

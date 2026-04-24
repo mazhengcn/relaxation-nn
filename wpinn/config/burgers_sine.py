@@ -2,31 +2,45 @@ from ml_collections import ConfigDict, config_dict
 
 
 def get_config() -> ConfigDict:
+    n_coll = 16384
+    n_u_total = 8192
+    n_int = 0
+    n_initial = 4096
+    n_boundary_total = 4096
+
     config = ConfigDict()
     config.DataConfig = dict(
         testdata_path="data/clawpack_data/burgers_sine.npy",
-        sampling_strategy="monte_carlo",
+        sampling_strategy="sobol",
+        sobol_scramble=False,
+        sobol_split_streams=False,
+        sobol_boundary_mode="legacy_overwrite",
+        reuse_samples=True,
+        sampling_seed=32,
         range_L=[0.0, -1.0],
         range_R=[1.0, 1.0],
-        num_samples=[4096, 512, 512],
+        num_samples=[n_coll, n_initial, n_boundary_total],
+        num_f_total=n_coll,
+        num_u_total=n_u_total,
+        num_internal=n_int,
     )
     config.NetConfig = dict(
         solution_layer_sizes=[2, 64, 64, 64, 64, 1],
-        test_layer_sizes=[2, 32, 32, 32, 1],
+        test_layer_sizes=[2, 64, 64, 64, 64, 1],
         configuration="DNN",
         solution_configuration="DNN",
         test_configuration="DNN",
-        activation="tanh",
-        solution_activation="tanh",
-        test_activation="tanh",
-        initialization="xavier_uniform",
-        test_initialization="xavier_uniform",
+        activation="sin",
+        solution_activation="sin",
+        test_activation="sin",
+        initialization="pytorch_default",
+        test_initialization="pytorch_default",
         ibc_type=["sine", "sine"],
         entropy_norm="H1",
         cutoff="def_max",
         weak_form="partial",
         c_mode="max",
-        entropy_c_samples=101,
+        entropy_c_samples=401,
         c_range_factor=2.0,
         sign_smoothing=1e-2,
         use_relu=True,
@@ -40,31 +54,62 @@ def get_config() -> ConfigDict:
         domain_max=[1.0, 1.0],
     )
     config.TrainConfig = dict(
-        epochs=20000,
-        maximize_steps=1,
-        minimize_steps=5,
+        epochs=300000,
+        maximize_steps=8,
+        minimize_steps=1,
         optimizer="Adam",
-        solution_lr=1e-3,
-        test_lr=1e-3,
+        solution_lr=1e-2,
+        test_lr=0.015,
         solution_decay="CosineAnnealing",
-        test_decay="CosineAnnealing",
+        test_decay="InverseTime",
         solution_cosine_eta_min=1e-6,
-        test_cosine_eta_min=1e-6,
+        test_cosine_eta_min=0.0,
+        solution_cosine_t_max=300000,
+        test_cosine_t_max=0,
         solution_amsgrad=True,
         test_amsgrad=True,
-        test_reset_every=2000,
+        test_reset_frequency=0.05,
+        test_reset_every=0,
+        reset_test_optimizer_state=False,
         history_every=100,
-        log_every=100,
-        checkpoint_every=1000,
+        log_every=1000,
+        checkpoint_every=300000,
+        defer_best_total_checkpoint=True,
+    )
+    config.legacy_ensemble_info = dict(
+        hidden_layers_sol=4,
+        hidden_layers_test=4,
+        neurons_sol=64,
+        neurons_test=64,
+        activation_sol="sin",
+        activation_test="sin",
+        tau_sol=1e-2,
+        tau_test=0.015,
+        iterations_min=1,
+        iterations_max=8,
+        residual_parameter=10,
+        kernel_regularizer=2,
+        regularization_parameter_sol=0.0,
+        regularization_parameter_test=0.0,
+        batch_size=n_coll + n_u_total + n_int,
+        epochs=300000,
+        norm="H1",
+        cutoff="def_max",
+        weak_form="partial",
+        reset_freq=0.05,
+        loss_type="l2",
     )
     config.model = "burgers"
     config.plot_label = "WPINN"
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
-    config.output_root = "_output/wpinn/burgers/sine"
-    config.experiment_name = (
-        "adam_cosine_20000_mc_4096_512_512_partial_h1_w10_entropy101_sol64_test32"
-    )
+    config.output_root = "_output/wpinn/burgers"
+    config.experiment_name = "sine"
     config.root_dir = ""
     config.timestamp = ""
+    config.resume_root_dir = ""
+    config.resume_checkpoint_epoch = 0
+    config.resume_load_optimizer_state = True
+    config.TrainConfig.resume_solution_lr = None
+    config.TrainConfig.resume_test_lr = None
     return config

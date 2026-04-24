@@ -16,6 +16,11 @@ class PDElossfn(torch.nn.MSELoss):
         return torch.square(inputs - targets).mean(dim=0).sum()
 
 
+class Sin(nn.Module):
+    def forward(self, x):
+        return torch.sin(x)
+
+
 class Net(nn.Module):
     def __init__(
         self,
@@ -30,6 +35,8 @@ class Net(nn.Module):
             self._activation = nn.Tanh()
         elif activation == "relu":
             self._activation = nn.ReLU()
+        elif activation == "sin":
+            self._activation = Sin()
         else:
             raise ValueError("Unsupported activation {}".format(activation))
         self._activation_name = activation
@@ -53,6 +60,8 @@ class Net(nn.Module):
 
     def _initialize_layers(self, initialization: str):
         if initialization == "pytorch_default":
+            for layer in self.layers:
+                layer.reset_parameters()
             return
 
         # gain = nn.init.calculate_gain(self._activation_name)

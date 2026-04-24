@@ -74,6 +74,7 @@ class BurgersNet(torch.nn.Module):
         self.test_regularization = float(getattr(config, "test_regularization", 0.0))
         self.domain_min = torch.tensor(getattr(config, "domain_min", [0.0, -1.0]))
         self.domain_max = torch.tensor(getattr(config, "domain_max", [1.0, 1.0]))
+        self._entropy_c_cache = {}
 
     def forward(self, x):
         return self._solution_net(x)
@@ -178,11 +179,24 @@ class BurgersNet(torch.nn.Module):
         raise ValueError("Unsupported entropy_norm {}".format(self.entropy_norm))
 
     def _entropy_c_values(self, device, dtype):
+        cache_key = (device.type, device.index, str(dtype), self.entropy_c_samples)
+        cached = self._entropy_c_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         probe = torch.linspace(-1.0, 1.0, 2049, device=device, dtype=dtype).reshape(-1, 1)
         u0 = self.q_ic(torch.cat([torch.zeros_like(probe), probe], dim=-1))
         min_c = self.c_range_factor * torch.min(u0)
         max_c = self.c_range_factor * torch.max(u0)
-        return torch.linspace(min_c.item(), max_c.item(), self.entropy_c_samples, device=device, dtype=dtype)
+        c_values = torch.linspace(
+            min_c.item(),
+            max_c.item(),
+            self.entropy_c_samples,
+            device=device,
+            dtype=dtype,
+        )
+        self._entropy_c_cache[cache_key] = c_values
+        return c_values
 
     def adversarial_residual(self, x_int):
         x_int = x_int.to(torch.float32)
@@ -211,35 +225,37 @@ class BurgersNet(torch.nn.Module):
         norm_test = self._norm(phi, grad_phi_x).square().clamp_min(self.eps)
         c_values = self._entropy_c_values(x_int.device, x_int.dtype)
 
-        res_mean = torch.zeros((), device=x_int.device, dtype=x_int.dtype)
-        res_max = torch.zeros((), device=x_int.device, dtype=x_int.dtype)
-        for c in c_values:
-            c_scalar = c.reshape(())
-            if self.weak_form == "partial":
-                residual = torch.mean(
-                    self._smooth_sign(u - c_scalar)
-                    * (grad_u_t * phi - grad_phi_x * (0.5 * u.square() - 0.5 * c_scalar.square()))
-                )
-                if self.use_relu:
-                    residual = torch.relu(residual) + self.eps
-                residual = self.loss_fn(
-                    residual.reshape(1, 1),
-                    torch.zeros((1, 1), device=x_int.device, dtype=x_int.dtype),
-                )
-            elif self.weak_form == "full":
-                residual = torch.relu(
-                    -torch.mean(
-                        self._smooth_abs(u - c_scalar) * grad_phi_t
-                        + self._smooth_sign(u - c_scalar)
-                        * grad_phi_x
-                        * (0.5 * u.square() - 0.5 * c_scalar.square())
-                    )
-                ).square()
-            else:
-                raise ValueError("Unsupported weak_form {}".format(self.weak_form))
+        c_column = c_values.reshape(-1, 1)
+        u_row = u.reshape(1, -1)
+        phi_row = phi.reshape(1, -1)
+        grad_u_t_row = grad_u_t.reshape(1, -1)
+        grad_phi_t_row = grad_phi_t.reshape(1, -1)
+        grad_phi_x_row = grad_phi_x.reshape(1, -1)
+        flux_gap = 0.5 * u_row.square() - 0.5 * c_column.square()
+        sign_term = self._smooth_sign(u_row - c_column)
 
-            res_mean = res_mean + residual / len(c_values)
-            res_max = torch.maximum(res_max, residual)
+        if self.weak_form == "partial":
+            residuals = torch.mean(
+                sign_term
+                * (grad_u_t_row * phi_row - grad_phi_x_row * flux_gap),
+                dim=1,
+            )
+            if self.use_relu:
+                residuals = torch.relu(residuals) + self.eps
+            residuals = residuals.square()
+        elif self.weak_form == "full":
+            residuals = torch.relu(
+                -torch.mean(
+                    self._smooth_abs(u_row - c_column) * grad_phi_t_row
+                    + sign_term * grad_phi_x_row * flux_gap,
+                    dim=1,
+                )
+            ).square()
+        else:
+            raise ValueError("Unsupported weak_form {}".format(self.weak_form))
+
+        res_mean = residuals.mean()
+        res_max = residuals.amax()
 
         if self.c_mode == "max":
             res_raw = res_max
@@ -260,7 +276,15 @@ class BurgersNet(torch.nn.Module):
         residual_terms = self.adversarial_residual(x_int)
         u_ic = self.initial_loss(x_ic)
         u_bc = self.boundary_loss(x_bc)
-        data_loss = u_ic + u_bc
+        num_ic = int(x_ic.shape[0])
+        num_bc = int(x_bc.shape[0])
+        total_data_points = num_ic + num_bc
+        if total_data_points > 0:
+            data_loss = (
+                u_ic * float(num_ic) + u_bc * float(num_bc)
+            ) / float(total_data_points)
+        else:
+            data_loss = torch.tensor(0.0, device=x_int.device, dtype=x_int.dtype)
         sol_reg = _lp_parameter_regularization(self._solution_net)
         test_reg = _lp_parameter_regularization(self._test_net)
 
