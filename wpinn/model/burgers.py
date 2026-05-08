@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from ml_collections import ConfigDict
 from shared.model import basic
+from torch.func import grad, vmap
 
 
 def _lp_parameter_regularization(module: torch.nn.Module, order: int = 2):
@@ -72,8 +73,15 @@ class BurgersNet(torch.nn.Module):
             getattr(config, "solution_regularization", 0.0)
         )
         self.test_regularization = float(getattr(config, "test_regularization", 0.0))
-        self.domain_min = torch.tensor(getattr(config, "domain_min", [0.0, -1.0]))
-        self.domain_max = torch.tensor(getattr(config, "domain_max", [1.0, 1.0]))
+        self.register_buffer(
+            "domain_min",
+            torch.tensor(getattr(config, "domain_min", [0.0, -1.0]), dtype=torch.float32),
+        )
+        self.register_buffer(
+            "domain_max",
+            torch.tensor(getattr(config, "domain_max", [1.0, 1.0]), dtype=torch.float32),
+        )
+        self.gradient_mode = "autograd"
         self._entropy_c_cache = {}
 
     def forward(self, x):
@@ -94,6 +102,12 @@ class BurgersNet(torch.nn.Module):
 
     def reset_test_network(self):
         self._test_net._initialize_layers(self._test_initialization)
+
+    def set_gradient_mode(self, mode: str):
+        mode = str(mode).strip().lower()
+        if mode not in {"autograd", "torch_func"}:
+            raise ValueError("Unsupported gradient_mode {}".format(mode))
+        self.gradient_mode = mode
 
     def q_ic(self, x):
         if self.ibc_type[0] == "sine":
@@ -134,36 +148,42 @@ class BurgersNet(torch.nn.Module):
         theta = self.test_network(x).reshape(-1)
         return self._cutoff_weight(x).reshape(-1) * theta.square()
 
-    def _cutoff_weight(self, x):
-        device = x.device
-        dtype = x.dtype
-        domain_min = self.domain_min.to(device=device, dtype=dtype)
-        domain_max = self.domain_max.to(device=device, dtype=dtype)
-        spatial_coords = x[:, 1:]
+    def _normalized_spatial_coords(self, x):
+        domain_min = self.domain_min.to(device=x.device, dtype=x.dtype)
+        domain_max = self.domain_max.to(device=x.device, dtype=x.dtype)
+        spatial_coords = x[..., 1:]
         spatial_min = domain_min[1:]
         spatial_max = domain_max[1:]
         half_width = 0.5 * (spatial_max - spatial_min)
         center = 0.5 * (spatial_max + spatial_min)
-        normalized = (spatial_coords - center) / half_width
+        return (spatial_coords - center) / half_width
 
+    def _cutoff_weight(self, x):
+        normalized = self._normalized_spatial_coords(x)
         cutoff_name = str(self.cutoff).strip().lower()
         if cutoff_name in {"def_max", "bump"}:
-            inside = (1.0 - normalized.abs()) > 0.0
-            values = torch.zeros_like(normalized)
-            safe = inside & (normalized.abs() < 1.0)
+            safe = normalized.abs() < 1.0
             values = torch.where(
                 safe,
-                torch.exp(1.0 / (normalized.square() - 1.0)),
-                values,
+                torch.exp(1.0 / (normalized.square() - 1.0) + 1.0),
+                torch.zeros_like(normalized),
             )
-            weight = values.prod(dim=-1, keepdim=True)
-            return weight / weight.amax().clamp_min(self.eps)
+            return values.prod(dim=-1, keepdim=True)
 
         if cutoff_name in {"quad", "quadratic"}:
-            weight = (1.0 - normalized.square()).clamp_min(0.0).prod(dim=-1, keepdim=True)
-            return weight / weight.amax().clamp_min(self.eps)
+            return (1.0 - normalized.square()).clamp_min(0.0).prod(
+                dim=-1, keepdim=True
+            )
 
         raise ValueError("Unsupported cutoff {}".format(self.cutoff))
+
+    def _solution_scalar(self, x):
+        return self.forward(x.unsqueeze(0)).reshape(())
+
+    def _phi_scalar(self, x):
+        theta = self.test_network(x.unsqueeze(0)).reshape(())
+        cutoff = self._cutoff_weight(x.unsqueeze(0)).reshape(())
+        return cutoff * theta.square()
 
     def _norm(self, phi, phi_x):
         if self.entropy_norm == "H1":
@@ -179,45 +199,34 @@ class BurgersNet(torch.nn.Module):
         raise ValueError("Unsupported entropy_norm {}".format(self.entropy_norm))
 
     def _entropy_c_values(self, device, dtype):
+        if self.gradient_mode == "torch_func":
+            return self._build_entropy_c_values(device=device, dtype=dtype)
+
         cache_key = (device.type, device.index, str(dtype), self.entropy_c_samples)
         cached = self._entropy_c_cache.get(cache_key)
         if cached is not None:
             return cached
 
+        c_values = self._build_entropy_c_values(device=device, dtype=dtype)
+        self._entropy_c_cache[cache_key] = c_values
+        return c_values
+
+    def _build_entropy_c_values(self, device, dtype):
         probe = torch.linspace(-1.0, 1.0, 2049, device=device, dtype=dtype).reshape(-1, 1)
         u0 = self.q_ic(torch.cat([torch.zeros_like(probe), probe], dim=-1))
         min_c = self.c_range_factor * torch.min(u0)
         max_c = self.c_range_factor * torch.max(u0)
-        c_values = torch.linspace(
-            min_c.item(),
-            max_c.item(),
-            self.entropy_c_samples,
-            device=device,
-            dtype=dtype,
-        )
-        self._entropy_c_cache[cache_key] = c_values
-        return c_values
+        interp = torch.linspace(0.0, 1.0, self.entropy_c_samples, device=device, dtype=dtype)
+        return min_c + (max_c - min_c) * interp
 
-    def adversarial_residual(self, x_int):
-        x_int = x_int.to(torch.float32)
-        x_int.requires_grad_(True)
-
-        u = self.forward(x_int).reshape(-1)
-        phi = self._phi(x_int)
-
-        grad_u = torch.autograd.grad(
-            u,
-            x_int,
-            grad_outputs=torch.ones_like(u),
-            create_graph=True,
-        )[0]
-        grad_phi = torch.autograd.grad(
-            phi,
-            x_int,
-            grad_outputs=torch.ones_like(phi),
-            create_graph=True,
-        )[0]
-
+    def _assemble_adversarial_residual(
+        self,
+        x_int,
+        u,
+        phi,
+        grad_u,
+        grad_phi,
+    ):
         grad_u_t = grad_u[:, 0]
         grad_phi_t = grad_phi[:, 0]
         grad_phi_x = grad_phi[:, 1]
@@ -272,6 +281,41 @@ class BurgersNet(torch.nn.Module):
             "test_norm": norm_test,
         }
 
+    def _adversarial_residual_autograd(self, x_int):
+        x_int = x_int.to(torch.float32)
+        x_int.requires_grad_(True)
+
+        u = self.forward(x_int).reshape(-1)
+        phi = self._phi(x_int)
+
+        grad_u = torch.autograd.grad(
+            u,
+            x_int,
+            grad_outputs=torch.ones_like(u),
+            create_graph=True,
+        )[0]
+        grad_phi = torch.autograd.grad(
+            phi,
+            x_int,
+            grad_outputs=torch.ones_like(phi),
+            create_graph=True,
+        )[0]
+        return self._assemble_adversarial_residual(x_int, u, phi, grad_u, grad_phi)
+
+    def _adversarial_residual_torch_func(self, x_int):
+        x_int = x_int.to(torch.float32)
+
+        u = self.forward(x_int).reshape(-1)
+        phi = self._phi(x_int)
+        grad_u = vmap(grad(self._solution_scalar))(x_int)
+        grad_phi = vmap(grad(self._phi_scalar))(x_int)
+        return self._assemble_adversarial_residual(x_int, u, phi, grad_u, grad_phi)
+
+    def adversarial_residual(self, x_int):
+        if self.gradient_mode == "torch_func":
+            return self._adversarial_residual_torch_func(x_int)
+        return self._adversarial_residual_autograd(x_int)
+
     def compute_min_loss_terms(self, x_int, x_ic, x_bc):
         residual_terms = self.adversarial_residual(x_int)
         u_ic = self.initial_loss(x_ic)
@@ -284,9 +328,15 @@ class BurgersNet(torch.nn.Module):
                 u_ic * float(num_ic) + u_bc * float(num_bc)
             ) / float(total_data_points)
         else:
-            data_loss = torch.tensor(0.0, device=x_int.device, dtype=x_int.dtype)
-        sol_reg = _lp_parameter_regularization(self._solution_net)
-        test_reg = _lp_parameter_regularization(self._test_net)
+            data_loss = x_int.new_zeros(())
+        if self.solution_regularization != 0.0:
+            sol_reg = _lp_parameter_regularization(self._solution_net)
+        else:
+            sol_reg = x_int.new_zeros(())
+        if self.test_regularization != 0.0:
+            test_reg = _lp_parameter_regularization(self._test_net)
+        else:
+            test_reg = x_int.new_zeros(())
 
         total = (
             self.data_weight * data_loss

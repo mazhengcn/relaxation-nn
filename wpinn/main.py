@@ -1,4 +1,5 @@
 from pathlib import Path
+import random
 import sys
 import csv
 import json
@@ -24,6 +25,44 @@ FLAGS = flags.FLAGS
 MODEL_DICT = {
     "burgers": burgers.BurgersNet,
 }
+
+
+def _configure_torch_runtime():
+    if not torch.cuda.is_available():
+        return
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+
+def _seed_everything(seed: int):
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+
+def _prepare_config_for_run(config):
+    with config.DataConfig.unlocked():
+        if "sampling_strategy" not in config.DataConfig:
+            config.DataConfig.sampling_strategy = "monte_carlo"
+        if (
+            config.DataConfig.sampling_strategy == "lhs"
+            and (
+                "lhs_criterion" not in config.DataConfig
+                or config.DataConfig.lhs_criterion is None
+            )
+        ):
+            config.DataConfig.lhs_criterion = "center"
+        config.DataConfig.sampling_seed = int(config.torch_seed)
+        if (
+            config.DataConfig.sampling_strategy != "fixed_grid"
+            and "interior_grid_shape" in config.DataConfig
+        ):
+            del config.DataConfig["interior_grid_shape"]
 
 
 def _prepare_run_dirs(root_dir, timestamp):
@@ -91,7 +130,7 @@ def _write_ensemble_info(config, save_path):
 
 
 def _write_info_model(config, save_path, summary, x_test, q_test):
-    model, _, epoch = load_model(save_path, checkpoint_epoch="best_total")
+    model, _, epoch = load_model(save_path)
     x_tensor = torch.tensor(x_test, dtype=torch.float32, device=DEVICE)
     with torch.no_grad():
         prediction = model(x_tensor).detach().cpu().numpy()
@@ -121,15 +160,15 @@ def _write_info_model(config, save_path, summary, x_test, q_test):
         ("train_time", float(summary["elapsed_seconds"])),
         ("L2_norm_test", mae),
         ("rel_L2_norm", rel_mae),
-        ("loss_tot", float(summary["best_total"])),
-        ("loss_vars", float(summary["best_total_data_loss"])),
-        ("loss_pde", float(summary["best_total_res_loss"])),
-        ("loss_pde_no_norm", float(summary["best_total_res_raw"])),
+        ("loss_tot", float(summary["final_total_loss"])),
+        ("loss_vars", float(summary["final_data_loss"])),
+        ("loss_pde", float(summary["final_res_loss"])),
+        ("loss_pde_no_norm", float(summary["final_res_raw"])),
         (
             "loss_pde_no_norm_after_max",
-            float(summary["best_total_res_raw_after_max"]),
+            float(summary["final_res_raw_after_max"]),
         ),
-        ("best_epoch", int(epoch)),
+        ("final_epoch", int(epoch)),
         ("retrain", retrain_value),
     ]
 
@@ -166,7 +205,9 @@ def _load_resume_state(config, model):
 
 
 def run_with_config(config):
-    torch.manual_seed(config.torch_seed)
+    _configure_torch_runtime()
+    _seed_everything(config.torch_seed)
+    _prepare_config_for_run(config)
     root_dir = _resolve_root_dir(config)
     with config.DataConfig.unlocked():
         config.DataConfig.testdata_path = repo_relative_path(
