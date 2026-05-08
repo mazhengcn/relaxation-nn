@@ -37,21 +37,7 @@ uv python install 3.12
 uv sync
 ```
 
-The default `uv sync` command installs the base RelaxNN environment only.
-
-If you also need the optional `pinns_jax` stack, install the JAX extra with:
-
-```bash
-uv sync --extra jax
-```
-
 If your machine needs a specific CUDA build of PyTorch, keep the base `uv` workflow above and replace the default `torch` installation inside the environment with the wheel recommended by the official PyTorch selector.
-
-If you want to run the JAX-specific tests, use:
-
-```bash
-uv run pytest pinns_jax
-```
 
 Quickstart
 -----

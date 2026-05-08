@@ -1,1 +1,0 @@
-"""WPINN model package."""
