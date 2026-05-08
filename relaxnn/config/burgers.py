@@ -4,11 +4,11 @@ from ml_collections import ConfigDict, config_dict
 def get_config() -> ConfigDict:
     config = ConfigDict()
     config.DataConfig = dict(
-        testdata_path="data/clawpack_data/burgers_riemann.npy",
+        testdata_path="data/clawpack_data/burgers_sine.npy",
         sampling_strategy="monte_carlo",
-        range_L=[0.0, -0.6],
-        range_R=[1.0, 0.6],
-        num_samples=[10000, 1000, 1000],
+        range_L=[0.0, -1.0],
+        range_R=[1.0, 1.0],
+        num_samples=[5000, 500, 500],
     )
     config.NetConfig = dict(
         layer_sizes=[
@@ -18,7 +18,7 @@ def get_config() -> ConfigDict:
         configuration=["DNN", "DNN"],
         activation=["tanh", "tanh"],
         initialization=["xavier_uniform", "xavier_uniform"],
-        ibc_type=["riemann", "riemann"],
+        ibc_type=["sine", "sine"],
         loss="MSE",
     )
     config.TrainConfig = dict(
@@ -32,7 +32,7 @@ def get_config() -> ConfigDict:
         scheduler_every=1,
         cosine_eta_min=1e-6,
         history_every=1000,
-        log_every=100,
+        log_every=1000,
         checkpoint_every=1000,
     )
     config.model = "burgers"
@@ -40,11 +40,8 @@ def get_config() -> ConfigDict:
     config.train_mode = "train"
     config.torch_seed = config_dict.placeholder(int)
     # By default, runs are saved to output_root/experiment_name/timestamp.
-    config.output_root = "_output/relaxnn/burgers/riemann"
-    config.experiment_name = (
-        "adam_cosine_eta1e6_300000_mc_10000_1000_1000_"
-        "tanh_xavier_uniform_w1_10_10_10n64"
-    )
+    config.output_root = "_output/relaxnn/burgers/sine/collection_points"
+    config.experiment_name = "5000"
     config.root_dir = ""
     config.timestamp = ""
     return config
